@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, status
 
 from aabha.api.dto.AuthRequest import AuthRequest
 from aabha.api.dto.TokenResponse import TokenResponse
@@ -6,7 +6,12 @@ from aabha.api.dto.UserResponse import UserResponse
 from aabha.config.config import config
 from aabha.db.repo.user_repo import find_user_by_username
 from aabha.models.user import User
-from aabha.services.livekit_service import create_token, room_for
+from aabha.services.livekit_service import (
+    claims_for,
+    create_dispatch,
+    create_token,
+    room_for,
+)
 from aabha.services.security import verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -45,3 +50,32 @@ async def issue_token(payload: AuthRequest) -> TokenResponse:
         room=room_for(user.id),
         identity=str(user.id),
     )
+
+
+@router.post("/dispatch", status_code=status.HTTP_204_NO_CONTENT)
+async def dispatch(authorization: str = Header(...)) -> None:
+    """Start an agent job for the caller's room.
+
+    The frontend calls this on every connect, not just at sign-in: the room
+    name is stable per user, so a reconnect can reuse a room that LiveKit
+    already created and would otherwise never dispatch into. The LiveKit token
+    is the credential, which keeps the password out of the reconnect path.
+    """
+    scheme, _, token = authorization.partition(" ")
+
+    if scheme.lower() != "bearer" or not token:
+        raise _INVALID_CREDENTIALS
+
+    try:
+        claims = claims_for(token)
+    except Exception:
+        raise _INVALID_CREDENTIALS
+
+    # Dispatch into the room the token actually grants, so a caller cannot
+    # start an agent in someone else's session by asking for it.
+    room = claims.video.room if claims.video else None
+
+    if not room:
+        raise _INVALID_CREDENTIALS
+
+    await create_dispatch(room)

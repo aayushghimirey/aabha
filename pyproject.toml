@@ -1,7 +1,7 @@
 [project]
 name = "aabha"
 version = "0.1.0"
-description = "Add your description here"
+description = "An intelligent voice companion that understands context, remembers what matters, and helps you navigate everyday life."
 readme = "README.md"
 authors = [
     { name = "aayushghimirey", email = "ayushghimire077@gmail.com" }
