@@ -4,7 +4,14 @@ import logging
 import os
 from uuid import UUID
 
-from livekit.agents import AgentServer, AgentSession, JobContext, cli
+from livekit.agents import (
+    AgentServer,
+    AgentSession,
+    JobContext,
+    cli,
+    TurnHandlingOptions,
+    inference,
+)
 
 from aabha.agent.assistant_agent import AssistantAgent
 from aabha.agent.user_session import UserSession
@@ -42,7 +49,7 @@ async def entrypoint(ctx: JobContext) -> None:
         # Shutdown callbacks are gathered, not run in order, so the summary
         # write and the pool teardown have to be sequenced here - otherwise
         # the pool can close underneath the write.
-        
+
         if agent is not None:
             await agent.finalise()
 
@@ -77,6 +84,16 @@ async def entrypoint(ctx: JobContext) -> None:
         llm=LLM_MODEL,
         stt=STT_MODEL,
         tts=TTS_MODEL,
+        turn_handling=TurnHandlingOptions(
+            turn_detection=inference.TurnDetector(),
+        ),
+        allow_interruptions=True,
+        min_endpointing_delay=0.5,
+        max_endpointing_delay=3.0,
+        vad=inference.VAD(
+            model="silero",
+            activation_threshold=0.5
+        )
     )
 
     logger.info(
