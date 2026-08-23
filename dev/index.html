@@ -1,0 +1,951 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>aabha</title>
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪔</text></svg>" />
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0c10;
+      --panel: #14161d;
+      --panel-2: #1b1e27;
+      --line: #262a36;
+      --text: #e8eaf0;
+      --muted: #8b93a7;
+      --accent: #7c6cff;
+      --accent-2: #4ad2c4;
+      --danger: #ff6b6b;
+      --ok: #4ade80;
+      --radius: 14px;
+      --font: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      background:
+        radial-gradient(60rem 30rem at 15% -10%, #7c6cff22, transparent 60%),
+        radial-gradient(50rem 25rem at 100% 0%, #4ad2c418, transparent 55%);
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 1060px;
+      margin: 0 auto;
+      padding: 24px 20px 64px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 28px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin-right: auto;
+    }
+
+    .brand h1 {
+      font-size: 22px;
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+
+    .brand span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .api-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .api-box input {
+      width: 210px;
+      font-size: 12px;
+      padding: 7px 10px;
+      color: var(--muted);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 9px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex: none;
+    }
+
+    .dot.ok {
+      background: var(--ok);
+      box-shadow: 0 0 0 4px #4ade8022;
+    }
+
+    .dot.bad {
+      background: var(--danger);
+      box-shadow: 0 0 0 4px #ff6b6b22;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 22px;
+      margin-bottom: 18px;
+    }
+
+    .card h2 {
+      margin: 0 0 4px;
+      font-size: 15px;
+      letter-spacing: -0.01em;
+    }
+
+    .card .sub {
+      color: var(--muted);
+      font-size: 13px;
+      margin: 0 0 18px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: 1fr;
+    }
+
+    @media (min-width: 860px) {
+      .grid.two {
+        grid-template-columns: 1.15fr 1fr;
+        align-items: start;
+      }
+    }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      background: var(--panel-2);
+      padding: 4px;
+      border-radius: 11px;
+      margin-bottom: 20px;
+    }
+
+    .tabs button {
+      flex: 1;
+      padding: 9px;
+      border: 0;
+      border-radius: 8px;
+      cursor: pointer;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 14px;
+    }
+
+    .tabs button[aria-selected="true"] {
+      background: var(--panel);
+      color: var(--text);
+      box-shadow: 0 1px 2px #0006;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin: 0 0 6px;
+    }
+
+    .field {
+      margin-bottom: 14px;
+    }
+
+    input[type=text],
+    input[type=email],
+    input[type=password],
+    input[type=date] {
+      width: 100%;
+      padding: 11px 13px;
+      font: inherit;
+      font-size: 14px;
+      color: var(--text);
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    input:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
+      border-color: transparent;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .row>* {
+      flex: 1 1 180px;
+    }
+
+    button.btn {
+      padding: 11px 18px;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+    }
+
+    button.btn:hover:not(:disabled) {
+      border-color: #39405280;
+      background: #212533;
+    }
+
+    button.btn.primary {
+      background: var(--accent);
+      border-color: transparent;
+      color: #fff;
+    }
+
+    button.btn.primary:hover:not(:disabled) {
+      filter: brightness(1.1);
+    }
+
+    button.btn.danger {
+      color: var(--danger);
+    }
+
+    button.btn:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+
+    button.link {
+      background: none;
+      border: 0;
+      color: var(--muted);
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 0;
+    }
+
+    .msg {
+      padding: 11px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      margin-bottom: 16px;
+      white-space: pre-line;
+    }
+
+    .msg.err {
+      background: #ff6b6b18;
+      border: 1px solid #ff6b6b40;
+      color: #ffb0b0;
+    }
+
+    .msg.ok {
+      background: #4ade8015;
+      border: 1px solid #4ade8038;
+      color: #a7f3c4;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .orb-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      padding: 12px 0 6px;
+    }
+
+    .orb {
+      width: 108px;
+      height: 108px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at 32% 28%, #ffffff26, transparent 55%), linear-gradient(140deg, var(--accent), #4a3fd0);
+      box-shadow: 0 12px 40px #7c6cff33;
+      font-size: 38px;
+      transition: transform .3s;
+    }
+
+    .orb.idle {
+      background: linear-gradient(140deg, #2a2f3d, #1d212b);
+      box-shadow: none;
+    }
+
+    .orb.live {
+      animation: breathe 2.6s ease-in-out infinite;
+    }
+
+    @keyframes breathe {
+
+      0%,
+      100% {
+        transform: scale(1);
+      }
+
+      50% {
+        transform: scale(1.055);
+      }
+    }
+
+    .state {
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+      min-height: 20px;
+    }
+
+    .state b {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .transcript {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      height: 300px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .turn {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      max-width: 88%;
+    }
+
+    .turn.you {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+
+    .turn .who {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .turn .what {
+      padding: 9px 13px;
+      border-radius: 12px;
+      font-size: 14px;
+      background: #232735;
+    }
+
+    .turn.you .what {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .turn.pending .what {
+      opacity: .65;
+    }
+
+    .empty {
+      color: var(--muted);
+      font-size: 13px;
+      margin: auto;
+      text-align: center;
+    }
+
+    dl.info {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 9px 18px;
+      margin: 0;
+      font-size: 13px;
+    }
+
+    dl.info dt {
+      color: var(--muted);
+    }
+
+    dl.info dd {
+      margin: 0;
+      word-break: break-all;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+    }
+
+    footer {
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+      margin-top: 30px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <h1>aabha</h1>
+        <span>voice companion</span>
+      </div>
+      <div class="api-box">
+        <span class="dot" id="health-dot" title="API health"></span>
+        <input id="api-base" spellcheck="false" aria-label="API base URL" />
+      </div>
+      <button class="btn hidden" id="logout">Sign out</button>
+    </header>
+
+    <!-- ---------------------------------------------------------- signed out -->
+    <section id="auth-view">
+      <div class="card" style="max-width: 460px; margin: 0 auto;">
+        <div class="tabs" role="tablist">
+          <button role="tab" id="tab-login" aria-selected="true">Sign in</button>
+          <button role="tab" id="tab-register" aria-selected="false">Create account</button>
+        </div>
+        <div id="auth-msg"></div>
+
+        <form id="login-form">
+          <div class="field">
+            <label for="li-username">Username</label>
+            <input id="li-username" type="text" autocomplete="username" required />
+          </div>
+          <div class="field">
+            <label for="li-password">Password</label>
+            <input id="li-password" type="password" autocomplete="current-password" required />
+          </div>
+          <button class="btn primary" style="width:100%" type="submit">Sign in</button>
+        </form>
+
+        <form id="register-form" class="hidden">
+          <div class="field">
+            <label for="rg-username">Username <span>3–32 characters</span></label>
+            <input id="rg-username" type="text" minlength="3" maxlength="32" autocomplete="username" required />
+          </div>
+          <div class="field">
+            <label for="rg-email">Email</label>
+            <input id="rg-email" type="email" autocomplete="email" required />
+          </div>
+          <div class="field">
+            <label for="rg-password">Password <span>at least 6 characters</span></label>
+            <input id="rg-password" type="password" minlength="6" maxlength="128" autocomplete="new-password"
+              required />
+          </div>
+          <div class="field">
+            <label for="rg-dob">Date of birth</label>
+            <input id="rg-dob" type="date" required />
+          </div>
+          <button class="btn primary" style="width:100%" type="submit">Create account</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ----------------------------------------------------------- signed in -->
+    <section id="app-view" class="hidden">
+      <div class="grid two">
+        <div>
+          <div class="card">
+            <h2>Talk to aabha</h2>
+            <p class="sub">Opens a LiveKit room and streams your mic to the agent.</p>
+            <div id="voice-msg"></div>
+            <div class="orb-wrap">
+              <div class="orb idle" id="orb">🪔</div>
+              <div class="state" id="voice-state">Not connected</div>
+              <div class="row" style="justify-content:center; flex: none;">
+                <button class="btn primary" id="connect">Connect</button>
+                <button class="btn hidden" id="mic">Mute</button>
+                <button class="btn danger hidden" id="disconnect">Leave</button>
+              </div>
+              <button class="btn hidden" id="unblock-audio">🔇 Tap to enable audio</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Transcript</h2>
+            <p class="sub">Live from the agent, over the <code>lk.transcription</code> text stream.</p>
+            <div class="transcript" id="transcript">
+              <div class="empty">Nothing said yet.</div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <h2>Your profile</h2>
+            <p class="sub">Reads <code>GET /users/{id}</code>, saves with <code>PUT</code>.</p>
+            <div id="profile-msg"></div>
+            <form id="profile-form">
+              <div class="field">
+                <label for="pf-username">Username</label>
+                <input id="pf-username" type="text" minlength="3" maxlength="32" required />
+              </div>
+              <div class="field">
+                <label for="pf-email">Email</label>
+                <input id="pf-email" type="email" required />
+              </div>
+              <div class="field">
+                <label for="pf-dob">Date of birth</label>
+                <input id="pf-dob" type="date" required />
+              </div>
+              <div class="row">
+                <button class="btn primary" type="submit">Save changes</button>
+                <button class="btn" type="button" id="profile-reload">Reload</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="card">
+            <h2>Session</h2>
+            <p class="sub">What <code>POST /auth/token</code> handed back.</p>
+            <dl class="info">
+              <dt>User id</dt>
+              <dd id="s-id">—</dd>
+              <dt>Room</dt>
+              <dd id="s-room">—</dd>
+              <dt>Server</dt>
+              <dd id="s-server">—</dd>
+              <dt>Joined</dt>
+              <dd id="s-since">—</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>aabha · local development frontend</footer>
+  </div>
+
+  <script>
+    "use strict";
+
+    /* ------------------------------------------------------------------ state */
+
+    const DEFAULT_BASE ="http://127.0.0.1:8080"
+
+    const store = {
+      get base() { return localStorage.getItem("aabha.base") || DEFAULT_BASE; },
+      set base(v) { localStorage.setItem("aabha.base", v); },
+      // The API issues no session of its own, so the LiveKit token is the only
+      // credential worth keeping - and it is kept for the tab, not the machine.
+      get session() {
+        try { return JSON.parse(sessionStorage.getItem("aabha.session")); }
+        catch { return null; }
+      },
+      set session(v) {
+        if (v) sessionStorage.setItem("aabha.session", JSON.stringify(v));
+        else sessionStorage.removeItem("aabha.session");
+      },
+    };
+
+    let user = null;      // UserResponse
+    let token = null;     // TokenResponse
+    let room = null;      // LivekitClient.Room
+    const segments = new Map();
+
+    const $ = (id) => document.getElementById(id);
+
+    /* -------------------------------------------------------------- api calls */
+
+    class ApiError extends Error {
+      constructor(message, status) { super(message); this.status = status; }
+    }
+
+    /** FastAPI reports validation failures as a list of {loc, msg}; everything
+     *  else as a plain `detail` string. Flatten both into something readable. */
+    function describe(payload, status) {
+      const detail = payload && payload.detail;
+      if (typeof detail === "string") return detail;
+      if (Array.isArray(detail)) {
+        return detail
+          .map((d) => {
+            const field = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : "request";
+            return `${field}: ${d.msg}`;
+          })
+          .join("\n");
+      }
+      return `Request failed (${status})`;
+    }
+
+    async function api(path, { method = "GET", body, headers } = {}) {
+      let res;
+      try {
+        res = await fetch(store.base + path, {
+          method,
+          headers: {
+            ...(body ? { "Content-Type": "application/json" } : null),
+            ...headers,
+          },
+          body: body ? JSON.stringify(body) : undefined,
+        });
+      } catch {
+        throw new ApiError(
+          `Cannot reach the API at ${store.base}.\nIs uvicorn running, and does it allow this origin?`,
+          0,
+        );
+      }
+
+      const payload = res.status === 204 ? null : await res.json().catch(() => null);
+      if (!res.ok) throw new ApiError(describe(payload, res.status), res.status);
+      return payload;
+    }
+
+    /* ------------------------------------------------------------------- view */
+
+    function note(el, text, kind = "err") {
+      el.innerHTML = text ? `<div class="msg ${kind}">${escapeHtml(text)}</div>` : "";
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    function busy(form, on, label) {
+      const btn = form.querySelector('button[type="submit"]');
+      if (!btn) return;
+      if (on) { btn.dataset.label = btn.textContent; btn.textContent = label; }
+      else if (btn.dataset.label) { btn.textContent = btn.dataset.label; }
+      btn.disabled = on;
+    }
+
+    function showApp() {
+      const signedIn = Boolean(user && token);
+      $("auth-view").classList.toggle("hidden", signedIn);
+      $("app-view").classList.toggle("hidden", !signedIn);
+      $("logout").classList.toggle("hidden", !signedIn);
+      if (signedIn) fillProfile();
+    }
+
+    function fillProfile() {
+      $("pf-username").value = user.username;
+      $("pf-email").value = user.email;
+      $("pf-dob").value = (user.dob || "").slice(0, 10);
+      $("s-id").textContent = user.id;
+      $("s-room").textContent = token.room;
+      $("s-server").textContent = token.server_url;
+    }
+
+    /* ------------------------------------------------------------------- auth */
+
+    $("tab-login").onclick = () => switchTab(true);
+    $("tab-register").onclick = () => switchTab(false);
+
+    function switchTab(login) {
+      $("tab-login").setAttribute("aria-selected", String(login));
+      $("tab-register").setAttribute("aria-selected", String(!login));
+      $("login-form").classList.toggle("hidden", !login);
+      $("register-form").classList.toggle("hidden", login);
+      note($("auth-msg"), "");
+    }
+
+    /** Login and token are two calls against the same credentials: the first
+     *  confirms who you are, the second buys the LiveKit grant. Doing both here
+     *  means the password never has to be held anywhere. */
+    async function signIn(username, password) {
+      user = await api("/auth/login", { method: "POST", body: { username, password } });
+      token = await api("/auth/token", { method: "POST", body: { username, password } });
+      store.session = { user, token };
+      showApp();
+    }
+
+    $("login-form").onsubmit = async (e) => {
+      e.preventDefault();
+      note($("auth-msg"), "");
+      busy(e.target, true, "Signing in…");
+      try {
+        await signIn($("li-username").value.trim(), $("li-password").value);
+      } catch (err) {
+        note($("auth-msg"), err.message);
+      } finally {
+        busy(e.target, false);
+      }
+    };
+
+    $("register-form").onsubmit = async (e) => {
+      e.preventDefault();
+      note($("auth-msg"), "");
+      busy(e.target, true, "Creating…");
+      const username = $("rg-username").value.trim();
+      const password = $("rg-password").value;
+      try {
+        await api("/users/register", {
+          method: "POST",
+          body: { username, email: $("rg-email").value.trim(), password, dob: $("rg-dob").value },
+        });
+        await signIn(username, password);
+      } catch (err) {
+        note($("auth-msg"), err.message);
+      } finally {
+        busy(e.target, false);
+      }
+    };
+
+    $("logout").onclick = async () => {
+      await leave();
+      user = token = null;
+      store.session = null;
+      showApp();
+    };
+
+    /* ---------------------------------------------------------------- profile */
+
+    $("profile-form").onsubmit = async (e) => {
+      e.preventDefault();
+      note($("profile-msg"), "");
+      busy(e.target, true, "Saving…");
+      try {
+        user = await api(`/users/${user.id}`, {
+          method: "PUT",
+          body: {
+            username: $("pf-username").value.trim(),
+            email: $("pf-email").value.trim(),
+            dob: $("pf-dob").value,
+          },
+        });
+        store.session = { user, token };
+        fillProfile();
+        note($("profile-msg"), "Saved.", "ok");
+      } catch (err) {
+        note($("profile-msg"), err.message);
+      } finally {
+        busy(e.target, false);
+      }
+    };
+
+    $("profile-reload").onclick = async () => {
+      note($("profile-msg"), "");
+      try {
+        user = await api(`/users/${user.id}`);
+        store.session = { user, token };
+        fillProfile();
+      } catch (err) {
+        note($("profile-msg"), err.message);
+      }
+    };
+
+    /* ------------------------------------------------------------------ voice */
+
+    function setState(text, live) {
+      $("voice-state").innerHTML = text;
+      $("orb").className = "orb" + (live ? " live" : " idle");
+    }
+
+    $("connect").onclick = connect;
+    $("disconnect").onclick = leave;
+    $("unblock-audio").onclick = async () => {
+      await room?.startAudio();
+      $("unblock-audio").classList.add("hidden");
+    };
+
+    $("mic").onclick = async () => {
+      if (!room) return;
+      const on = room.localParticipant.isMicrophoneEnabled;
+      await room.localParticipant.setMicrophoneEnabled(!on);
+      $("mic").textContent = on ? "Unmute" : "Mute";
+    };
+
+    async function connect() {
+      note($("voice-msg"), "");
+
+      if (typeof LivekitClient === "undefined") {
+        note($("voice-msg"), "The LiveKit client script did not load - check your connection to the CDN.");
+        return;
+      }
+
+      const { Room, RoomEvent, Track } = LivekitClient;
+      $("connect").disabled = true;
+      setState("Connecting…", false);
+
+      room = new Room({ adaptiveStream: true, dynacast: true });
+
+      room.on(RoomEvent.TrackSubscribed, (track) => {
+        if (track.kind === Track.Kind.Audio) document.body.appendChild(track.attach());
+      });
+      room.on(RoomEvent.TrackUnsubscribed, (track) => track.detach().forEach((el) => el.remove()));
+      room.on(RoomEvent.ParticipantConnected, () => setState("aabha is <b>listening</b>", true));
+      room.on(RoomEvent.ParticipantDisconnected, () => setState("The agent left the room", false));
+      room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        $("unblock-audio").classList.toggle("hidden", room.canPlaybackAudio);
+      });
+      room.on(RoomEvent.Disconnected, (reason) => {
+        setState(reason ? `Disconnected (${reason})` : "Not connected", false);
+        onLeft();
+      });
+
+      try {
+        await room.connect(token.server_url, token.token);
+        room.registerTextStreamHandler("lk.transcription", onTranscription);
+        await room.localParticipant.setMicrophoneEnabled(true);
+
+        // The room name is stable per user, so rejoining can land in a room
+        // LiveKit already created - which fires no automatic dispatch. Asking
+        // per connect is what makes leaving and coming back work.
+        await api("/auth/dispatch", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token.token}` },
+        });
+
+        $("connect").classList.add("hidden");
+        $("mic").classList.remove("hidden");
+        $("disconnect").classList.remove("hidden");
+        $("mic").textContent = "Mute";
+        $("s-since").textContent = new Date().toLocaleTimeString();
+
+        setState(
+          room.remoteParticipants.size
+            ? "aabha is <b>listening</b>"
+            : "Connected — waiting for the agent to join",
+          true,
+        );
+      } catch (err) {
+        // An expired token is the likeliest cause, and the API has no refresh.
+        const hint = /token|jwt|permission|unauthor/i.test(err.message ?? "")
+          ? "\nYour LiveKit token may have expired — sign out and back in."
+          : "";
+        note($("voice-msg"), (err.message || "Could not join the room.") + hint);
+        setState("Not connected", false);
+        room = null;
+      } finally {
+        $("connect").disabled = false;
+      }
+    }
+
+    async function leave() {
+      if (room) { await room.disconnect(); room = null; }
+      onLeft();
+    }
+
+    function onLeft() {
+      room = null;
+      $("connect").classList.remove("hidden");
+      $("mic").classList.add("hidden");
+      $("disconnect").classList.add("hidden");
+      $("unblock-audio").classList.add("hidden");
+      $("s-since").textContent = "—";
+    }
+
+    /** The agent streams each utterance as it forms: the same segment id arrives
+     *  repeatedly with more text, so segments are replaced rather than appended. */
+    async function onTranscription(reader, participant) {
+      const attrs = reader.info?.attributes || {};
+      const id = attrs["lk.segment_id"] || reader.info?.id || String(Math.random());
+      const mine = participant?.identity === room?.localParticipant?.identity;
+
+      const paint = (text, final) => {
+        if (!text) return;
+        segments.set(id, { text, mine, final });
+        renderTranscript();
+      };
+
+      try {
+        if (typeof reader[Symbol.asyncIterator] === "function") {
+          let text = "";
+          for await (const chunk of reader) { text += chunk; paint(text, false); }
+          paint(text, true);
+        } else {
+          paint(await reader.readAll(), true);
+        }
+      } catch {
+        /* a dropped stream should never take the UI with it */
+      }
+    }
+
+    function renderTranscript() {
+      const box = $("transcript");
+      box.innerHTML = "";
+
+      if (!segments.size) {
+        box.innerHTML = '<div class="empty">Nothing said yet.</div>';
+        return;
+      }
+
+      for (const { text, mine, final } of segments.values()) {
+        const el = document.createElement("div");
+        el.className = `turn ${mine ? "you" : "them"}${final ? "" : " pending"}`;
+        el.innerHTML =
+          `<div class="who">${mine ? "You" : "aabha"}</div>` +
+          `<div class="what">${escapeHtml(text)}</div>`;
+        box.appendChild(el);
+      }
+      box.scrollTop = box.scrollHeight;
+    }
+
+    /* ----------------------------------------------------------- health + api */
+
+    $("api-base").value = store.base;
+    $("api-base").onchange = (e) => {
+      store.base = e.target.value.trim().replace(/\/$/, "");
+      $("api-base").value = store.base;
+      checkHealth();
+    };
+
+    async function checkHealth() {
+      const dot = $("health-dot");
+      try {
+        const res = await api("/health");
+        const ok = res && res.status === "ok";
+        dot.className = "dot " + (ok ? "ok" : "bad");
+        dot.title = ok ? "API healthy" : "API responded oddly";
+      } catch {
+        dot.className = "dot bad";
+        dot.title = `No response from ${store.base}`;
+      }
+    }
+
+    /* ------------------------------------------------------------------- boot */
+
+    const saved = store.session;
+    if (saved && saved.user && saved.token) {
+      user = saved.user;
+      token = saved.token;
+    }
+    showApp();
+    checkHealth();
+    setInterval(checkHealth, 20000);
+    window.addEventListener("beforeunload", () => room?.disconnect());
+  </script>
+</body>
+
+</html>
