@@ -21,5 +21,7 @@ class Config:
         default_factory=lambda: int(os.getenv("LIVEKIT_TOKEN_TTL_MINUTES", "60"))
     )
 
+    TAVILY_MCP_URL: str = field(default_factory=lambda: os.environ["TAVILY_MCP_URL"])
+
 
 config = Config()

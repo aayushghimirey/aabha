@@ -6,3 +6,4 @@ psycopg[binary]
 psycopg-pool
 argon2-cffi
 livekit-agents
+livekit-agents[mcp]
