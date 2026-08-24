@@ -817,6 +817,11 @@
       try {
         await room.connect(token.server_url, token.token);
         room.registerTextStreamHandler("lk.transcription", onTranscription);
+
+        // Registered before dispatch, so the method already exists if the
+        // agent asks for a location in its very first turn.
+        room.localParticipant.registerRpcMethod(LOCATION_RPC_METHOD, handleLocationRequest);
+
         await room.localParticipant.setMicrophoneEnabled(true);
 
         // The room name is stable per user, so rejoining can land in a room
@@ -864,6 +869,76 @@
       $("disconnect").classList.add("hidden");
       $("unblock-audio").classList.add("hidden");
       $("s-since").textContent = "—";
+    }
+
+    /* --------------------------------------------------------- geolocation */
+
+    // The agent calls this over RPC when it needs to know where you are. It has
+    // to be registered on the local participant before the agent asks, and the
+    // browser only answers over https or on localhost - opening this page as a
+    // file:// URL gets the request denied, so serve it (python -m http.server).
+    const LOCATION_RPC_METHOD = "get_current_location";
+
+    // The agent waits 30s; leaving headroom means a slow fix times out here,
+    // with a reason to explain, rather than there with none.
+    const LOCATION_TIMEOUT_MS = 25000;
+
+    // A fix from the last two minutes is close enough for "where am I", and
+    // reusing it skips both the wait and a second permission prompt.
+    const LOCATION_MAX_AGE_MS = 120000;
+
+    const GEO_REASONS = {
+      1: "location permission was denied",
+      2: "their device could not get a position fix",
+      3: "the location request timed out",
+    };
+
+    function currentPosition() {
+      return new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: LOCATION_TIMEOUT_MS,
+          maximumAge: LOCATION_MAX_AGE_MS,
+        });
+      });
+    }
+
+    /** The reason travels back to the agent and gets read out, so it has to be
+     *  an RpcError: a plain Error is logged and replaced with a generic
+     *  "application error" on one of the SDK's two transports, losing the
+     *  only part the agent could say. */
+    function refuse(reason) {
+      const { RpcError } = LivekitClient;
+      return new RpcError(RpcError.ErrorCode.APPLICATION_ERROR, reason);
+    }
+
+    /** RPC answers with a string, so the coordinates travel as JSON. */
+    async function handleLocationRequest() {
+      if (!navigator.geolocation || !window.isSecureContext) {
+        throw refuse("this page cannot read a location - it is not served over https");
+      }
+
+      let pos;
+      try {
+        pos = await currentPosition();
+      } catch (err) {
+        throw refuse(GEO_REASONS[err && err.code] || "their device would not share a location");
+      }
+
+      const { latitude, longitude, accuracy } = pos.coords;
+      flashState("Shared your location with <b>aabha</b>");
+
+      return JSON.stringify({ latitude, longitude, accuracy });
+    }
+
+    /** Say something in the status line without losing the connection state
+     *  it was showing. */
+    let flashTimer = null;
+    function flashState(text) {
+      const previous = $("voice-state").innerHTML;
+      setState(text, true);
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => setState(previous, true), 4000);
     }
 
     /** The agent streams each utterance as it forms: the same segment id arrives

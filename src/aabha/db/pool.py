@@ -1,7 +1,7 @@
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
-from aabha.config.config import config
+from aabha.config import config
 from contextlib import asynccontextmanager
 
 _conn_pool: AsyncConnectionPool | None = None

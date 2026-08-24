@@ -3,7 +3,7 @@ from uuid import UUID
 
 from livekit import api
 
-from aabha.config.config import config
+from aabha.config import config
 
 # The name the worker registers under. Naming the agent switches LiveKit from
 # automatic dispatch to explicit dispatch, so a job is created per connect

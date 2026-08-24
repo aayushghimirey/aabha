@@ -23,5 +23,14 @@ class Config:
 
     TAVILY_MCP_URL: str = field(default_factory=lambda: os.environ["TAVILY_MCP_URL"])
 
+    # Turns the coordinates a browser reports into a place name. The public
+    # instance is rate limited to a request a second; set this to your own
+    # Nominatim if that ever bites.
+    NOMINATIM_URL: str = field(
+        default_factory=lambda: os.getenv(
+            "NOMINATIM_URL"
+        )
+    )
+
 
 config = Config()

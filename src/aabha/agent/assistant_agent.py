@@ -9,7 +9,9 @@ from livekit.agents import (
     ChatContext,
     ChatMessage,
     ConversationItemAddedEvent,
+    ToolError,
     function_tool,
+    get_job_context,
     llm,
 )
 
@@ -18,10 +20,12 @@ from aabha.agent.prompts import (
     SUMMARY_INSTRUCTIONS,
     SYSTEM_PROMPT,
 )
+from aabha.agent.user_location_request import LocationUnavailable, ask_user_location
 from aabha.agent.user_session import UserSession
 from aabha.db.repo.conversation_repo import update_conversation_summary
 from aabha.db.repo.memory_repo import upsert_memory
 from aabha.db.repo.message_repo import create_message
+from aabha.services.geocoding import describe_location
 from aabha.models.memory import MEMORY_KINDS
 from aabha.models.message import ROLE_TYPES
 
@@ -167,3 +171,72 @@ class AssistantAgent(Agent):
         logger.info("saved memory %r for user %s", key, self.userdata.user.id)
 
         return f"Saved: {content}"
+
+    @function_tool
+    async def get_current_location(self) -> dict[str, str | float | None]:
+        """Get the user's CURRENT physical location from their device.
+
+        MANDATORY TOOL USAGE:
+        - ALWAYS call this tool when the user asks "Where am I?", "What's my location?",
+        "Where am I right now?", or any equivalent question about their current location.
+        - ALWAYS call this tool when the user asks how far away a place/destination is
+        and they have NOT explicitly provided a starting location.
+        - ALWAYS call this tool for "near me", "nearby", "around me", "close to me",
+        "closest", or similar location-relative requests.
+        - ALWAYS call this tool when calculating distance, travel time, or directions
+        FROM the user's current location.
+        - Do NOT assume, remember, or invent the user's current location.
+        - A previously mentioned place is NOT the user's current location unless the user
+        explicitly says they are currently there.
+
+        EXAMPLES:
+        User: "Where am I?"
+        → MUST call this tool.
+
+        User: "What's my current location?"
+        → MUST call this tool.
+
+        User: "How far is the airport?"
+        → MUST call this tool first, then use the returned coordinates to calculate
+        distance/travel time to the airport.
+
+        User: "How far is Thamel from me?"
+        → MUST call this tool first.
+
+        User: "Find a restaurant near me."
+        → MUST call this tool first.
+
+        User: "How far is Thamel from Kathmandu?"
+        → Do NOT call this tool because both locations are explicitly provided.
+
+        User: "What's the weather here?"
+        → Call this tool if "here" refers to the user's current physical location.
+
+        The tool returns the user's current place name, latitude, and longitude.
+        Use the place name when speaking to the user. NEVER read latitude or longitude
+        aloud. Use latitude/longitude internally for maps, distance, weather, and other
+        location-based tools.
+
+        This tool accesses the user's device location and may cause the device/browser
+        to ask for location permission, so briefly tell the user when appropriate.
+        """
+        try:
+            location = await ask_user_location(get_job_context().room)
+        except LocationUnavailable as err:
+            # The message is written to be said out loud, so hand it to the
+            # model rather than failing the turn.
+            raise ToolError(f"I could not get their location: {err}") from err
+
+        # A name is the half worth saying, but the lookup is a third party and
+        # can be slow or down - so it is allowed to come back empty, and the
+        # coordinates go out either way.
+        place = await describe_location(location.latitude, location.longitude)
+
+        logger.info("located user %s: %s", self.userdata.user.id, place or "unnamed")
+
+        return {
+            "place": place,
+            "latitude": location.latitude,
+            "longitude": location.longitude,
+            "accuracy_m": location.accuracy_m,
+        }
