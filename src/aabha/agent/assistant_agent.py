@@ -20,7 +20,7 @@ from aabha.agent.prompts import (
     SUMMARY_INSTRUCTIONS,
     SYSTEM_PROMPT,
 )
-from aabha.agent.user_location_request import LocationUnavailable, ask_user_location
+from aabha.agent.user_location_lkrpc import LocationUnavailable, ask_user_location
 from aabha.agent.user_session import UserSession
 from aabha.db.repo.conversation_repo import update_conversation_summary
 from aabha.db.repo.memory_repo import upsert_memory
