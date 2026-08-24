@@ -16,7 +16,7 @@ from livekit.agents import (
 
 from aabha.agent.assistant_agent import AssistantAgent
 from aabha.agent.user_session import UserSession
-from aabha.config.config import config
+from aabha.config import config
 from aabha.db.pool import close_pool, open_pool
 from aabha.db.repo.conversation_repo import create_conversation
 from aabha.db.repo.user_repo import find_user_by_id
@@ -105,9 +105,6 @@ async def entrypoint(ctx: JobContext) -> None:
     )
 
     await session.start(agent, room=ctx.room)
-
-
-print("Api urllll:", config.TAVILY_MCP_URL)
 
 
 def _identity_to_user_id(identity: str) -> UUID | None:

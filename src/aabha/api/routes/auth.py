@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Header, HTTPException, status
 
-from aabha.api.dto.AuthRequest import AuthRequest
-from aabha.api.dto.TokenResponse import TokenResponse
-from aabha.api.dto.UserResponse import UserResponse
-from aabha.config.config import config
+from aabha.api.dto.auth import AuthRequest, TokenResponse
+from aabha.api.dto.user import UserResponse
+from aabha.config import config
 from aabha.db.repo.user_repo import find_user_by_username
 from aabha.models.user import User
 from aabha.services.livekit_service import (

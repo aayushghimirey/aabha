@@ -3,9 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 from psycopg.errors import UniqueViolation
 
-from aabha.api.dto.UserRegister import UserRegister
-from aabha.api.dto.UserResponse import UserResponse
-from aabha.api.dto.UserUpdate import UserUpdate
+from aabha.api.dto.user import UserRegister, UserResponse, UserUpdate
 from aabha.db.repo.user_repo import (
     create_user,
     find_user_by_id,
@@ -18,7 +16,12 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(payload: UserRegister) -> UserResponse:
     try:
-        user = await create_user(payload)
+        user = await create_user(
+            username=payload.username,
+            email=payload.email,
+            password=payload.password,
+            dob=payload.dob,
+        )
     except UniqueViolation:
         # The unique indexes are the source of truth: a pre-check would still race.
         raise HTTPException(
@@ -43,7 +46,12 @@ async def get_user(user_id: UUID) -> UserResponse:
 @router.put("/{user_id}", response_model=UserResponse)
 async def update(user_id: UUID, payload: UserUpdate) -> UserResponse:
     try:
-        user = await update_user(user_id, payload)
+        user = await update_user(
+            user_id,
+            username=payload.username,
+            email=payload.email,
+            dob=payload.dob,
+        )
     except UniqueViolation:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
