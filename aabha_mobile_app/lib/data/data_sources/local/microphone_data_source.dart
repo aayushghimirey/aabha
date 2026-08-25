@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/network/api_exception.dart';
@@ -10,7 +11,18 @@ import '../../../core/network/api_exception.dart';
 class MicrophoneDataSource {
   const MicrophoneDataSource();
 
+  /// Only the mobile platforms have a permission to ask for. Desktop has no
+  /// permission_handler implementation at all, so asking there throws a
+  /// missing-plugin error and takes down a connect that would have worked —
+  /// the capture prompt handles it instead.
+  static const Set<TargetPlatform> _asks = {
+    TargetPlatform.android,
+    TargetPlatform.iOS,
+  };
+
   Future<void> ensurePermission() async {
+    if (kIsWeb || !_asks.contains(defaultTargetPlatform)) return;
+
     final status = await Permission.microphone.request();
     if (status.isGranted) return;
 
