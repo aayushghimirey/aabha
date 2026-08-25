@@ -8,6 +8,17 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>aabha</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>aabha needs your microphone so you can talk to it.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>aabha uses your location to tell you where you are and to guide you as you walk.</string>
+	<!-- Speech has to keep arriving while the screen is off or another app is
+	     in front, or a walk with directions goes silent at the first lock. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>voip</string>
+	</array>
 	<!-- App Transport Security blocks plain http. This exempts local
 	     addresses only, so the dev API on the same machine or LAN is
 	     reachable while everything else still has to be https. -->

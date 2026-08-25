@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/app_card.dart';
 import '../../../providers/session_providers.dart';
+import '../../../providers/voice_providers.dart';
 import 'info_row.dart';
 
 /// What `POST /auth/token` handed back.
@@ -12,6 +13,9 @@ class SessionInfoCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(currentSessionProvider);
+    final connectedAt = ref.watch(
+      voiceControllerProvider.select((voice) => voice.connectedAt),
+    );
 
     return AppCard(
       title: 'Session',
@@ -22,8 +26,19 @@ class SessionInfoCard extends ConsumerWidget {
           InfoRow(label: 'User id', value: session?.user.id),
           InfoRow(label: 'Room', value: session?.token.room),
           InfoRow(label: 'Server', value: session?.token.serverUrl),
+          InfoRow(label: 'Joined', value: _clock(connectedAt)),
         ],
       ),
     );
+  }
+
+  /// Wall-clock time the room was joined, or nothing while it is not.
+  static String? _clock(DateTime? at) {
+    if (at == null) return null;
+
+    final hour = at.hour.toString().padLeft(2, '0');
+    final minute = at.minute.toString().padLeft(2, '0');
+    final second = at.second.toString().padLeft(2, '0');
+    return '$hour:$minute:$second';
   }
 }
