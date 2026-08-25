@@ -47,3 +47,21 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS messages_conversation_idx
     ON messages (conversation_id, created_at);
+
+CREATE TABLE IF NOT EXISTS navigations (
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id               UUID             NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    destination_name      TEXT             NOT NULL,
+    destination_address   TEXT             NOT NULL DEFAULT '',
+    start_latitude        DOUBLE PRECISION NOT NULL,
+    start_longitude       DOUBLE PRECISION NOT NULL,
+    destination_latitude  DOUBLE PRECISION NOT NULL,
+    destination_longitude DOUBLE PRECISION NOT NULL,
+    status                TEXT             NOT NULL DEFAULT 'pending'
+                          CHECK (status IN ('pending', 'started', 'completed', 'failed')),
+    created_at            TIMESTAMPTZ      NOT NULL DEFAULT now(),
+    updated_at            TIMESTAMPTZ      NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS navigations_user_recent_idx
+    ON navigations (user_id, created_at DESC);
