@@ -5,6 +5,7 @@ import logging
 from typing import get_args
 from uuid import UUID
 
+from livekit import rtc
 from livekit.agents import (
     Agent,
     ChatContext,
@@ -22,9 +23,13 @@ from aabha.agent.prompts import (
     SYSTEM_PROMPT,
 )
 from aabha.agent.user_location_lkrpc import (
+    LOCATION_TOPIC,
     Location,
     LocationUnavailable,
     ask_user_location,
+    read_location,
+    start_location_stream,
+    stop_location_stream,
 )
 from aabha.agent.user_session import UserSession
 from aabha.db.repo.conversation_repo import update_conversation_summary
@@ -42,6 +47,8 @@ from aabha.services.navigation_service import (
     DestinationLookupError,
     find_destinations,
 )
+from aabha.services.route_guidance import RouteTracker, say_distance, say_duration
+from aabha.services.routing_service import TRAVEL_MODE, RoutingError, plan_route
 from aabha.models.memory import MEMORY_KINDS
 from aabha.models.message import ROLE_TYPES
 from aabha.models.navigation import NAVIGATION_UPDATE, Navigation, NavigationPoint
@@ -83,12 +90,36 @@ class AssistantAgent(Agent):
         # instead - so "I have arrived" works on a fresh call too.
         self._navigation_id: UUID | None = None
 
+        # The trip in progress, if one is being guided: the planned route and
+        # how far along it the user was last seen. None means nobody is being
+        # guided anywhere, and the positions their app sends are ignored.
+        self._tracker: RouteTracker | None = None
+
+        # How they said they were travelling, kept for the reroute - a walker
+        # who wanders off is put back on a walking route.
+        self._travel_mode: TRAVEL_MODE | None = None
+
+        # One reroute at a time. Coming off a route takes several fixes to
+        # notice and only one to fix, and asking twice would leave two routes
+        # racing to become the one being followed.
+        self._rerouting = False
+
+        # Background work that is not a database write - rerouting, closing a
+        # trip off - held only so the tasks are not collected mid-flight.
+        self._tasks: set[asyncio.Task[object]] = set()
+
     @property
     def userdata(self) -> UserSession:
         return self.session.userdata
 
     async def on_enter(self) -> None:
         self.session.on("conversation_item_added", self._on_conversation_item_added)
+
+        # Registered for the whole call, not just for a trip: the positions
+        # only start arriving once a trip asks for them, and a handler that
+        # was added when guidance began would miss the first of them.
+        get_job_context().room.on("data_received", self._on_location)
+
         self.session.generate_reply(instructions=GREETING_INSTRUCTIONS)
 
     async def on_exit(self) -> None:
@@ -138,6 +169,11 @@ class AssistantAgent(Agent):
             return
 
         self._finalised = True
+
+        # A reroute or a trip being closed off has nothing left to say to a
+        # call that is already over.
+        for task in self._tasks:
+            task.cancel()
 
         if self._writes:
             await asyncio.gather(*self._writes, return_exceptions=True)
@@ -424,7 +460,9 @@ class AssistantAgent(Agent):
         has confirmed which one they mean. If they have not confirmed, ask them
         first - saving the wrong place is worse than one more question.
 
-        This records where they are going. It does not start guiding them.
+        This records where they are going. Guiding them there is a separate
+        step: ask whether they are walking or driving, then call
+        start_navigation.
 
         Args:
             option: The number of the chosen match from find_destination.
@@ -464,7 +502,11 @@ class AssistantAgent(Agent):
         self._candidates = []
         self._search_origin = None
 
-        return f"Saved {candidate.name} as their destination."
+        return (
+            f"Saved {candidate.name} as their destination. Ask whether they"
+            " are walking, driving or cycling there, then call"
+            " start_navigation to take them."
+        )
 
     async def _active_navigation(self) -> Navigation | None:
         """The trip being talked about: the one saved in this call, or failing
@@ -554,7 +596,283 @@ class AssistantAgent(Agent):
             status,
         )
 
-        # A finished trip is not the one a later "I've arrived" refers to.
+        # A finished trip is not the one a later "I've arrived" refers to,
+        # and it is not one to keep calling turns for either.
         self._navigation_id = None if status in ("completed", "failed") else updated.id
 
+        if status in ("completed", "failed"):
+            self._stop_guidance()
+
         return f"Marked their trip to {updated.destination_name} as {status}."
+
+    # -- live guidance ----------------------------------------------------
+
+    @function_tool
+    async def start_navigation(self, travel_mode: TRAVEL_MODE) -> dict[str, object]:
+        """Start guiding the user to the destination they have already chosen.
+
+        Call this once they have saved a destination and have said how they
+        are travelling. If they have not said, ask - "are you walking or
+        driving?" - because a route on foot and a route by car are different
+        turns, not the same turns at a different speed.
+
+        This works out the way there, asks their app to report their position
+        as they move, and from then on the turns are spoken to them
+        automatically as each one comes up. You do not have to do anything to
+        make that happen, and you must not do it yourself.
+
+        HOW TO ANSWER FROM WHAT COMES BACK
+
+        `say` is the whole answer. Read it out more or less word for word -
+        how far it is, how long it should take, and the first thing they do -
+        then stop. Do not add turns of your own, do not list the route, and do
+        not offer to read the directions out: you have not been given them,
+        and the ones that matter will be said at the moment they are needed.
+
+        If `live_guidance` is false their app is not sharing their position,
+        so nothing further will be spoken as they go. Tell them that plainly -
+        they can hear the distance and the first step, but you will not be
+        able to call the turns - and suggest they reload the page and allow
+        location.
+
+        Args:
+            travel_mode: How they are getting there. "walk" for on foot,
+                "drive" for a car, motorbike or taxi, "cycle" for a bicycle.
+        """
+        navigation = await self._active_navigation()
+
+        if navigation is None:
+            raise ToolError(
+                "They have no destination saved. Find one with"
+                " find_destination and save it first."
+            )
+
+        origin = await self._origin()
+
+        try:
+            route = await plan_route(origin, navigation.destination, travel_mode)
+        except RoutingError as err:
+            raise ToolError(f"I could not work out the way there: {err}") from err
+
+        tracker = RouteTracker(route, navigation.destination_name)
+
+        self._tracker = tracker
+        self._travel_mode = travel_mode
+        self._navigation_id = navigation.id
+
+        if navigation.status != "started":
+            await change_navigation_status(navigation.id, "started")
+
+        # The route is worth having even if their phone will not follow them -
+        # the distance and the first step still tell them something.
+        live_guidance = True
+
+        try:
+            await start_location_stream(get_job_context().room)
+        except LocationUnavailable as err:
+            live_guidance = False
+
+            logger.info("no live guidance for this trip: %s", err)
+
+        logger.info(
+            "guiding user %s to %s by %s: %.0fm",
+            self.userdata.user.id,
+            navigation.destination_name,
+            travel_mode,
+            route.distance_m,
+        )
+
+        return {
+            "destination": navigation.destination_name,
+            "travelling": travel_mode,
+            "distance": say_distance(route.distance_m),
+            "time": say_duration(route.duration_s),
+            "turns": len(route.steps),
+            "live_guidance": live_guidance,
+            "say": tracker.opening(),
+            "instruction": (
+                "Say what is in `say`, near enough word for word, and nothing"
+                " more. The turns will be spoken to them as they reach them -"
+                " never invent one, never read the route out, and never"
+                " promise to tell them when to turn as though it were"
+                " something you had to remember to do."
+                if live_guidance
+                else "Say what is in `say`, then tell them their app is not"
+                " sharing where they are, so you cannot call the turns as"
+                " they go. Suggest reloading the page and allowing location."
+            ),
+        }
+
+    @function_tool
+    async def check_route_progress(self) -> dict[str, object]:
+        """How much further the user has to go on the trip being guided.
+
+        Call this when they ask how far is left, how long it will take, where
+        they are up to, or what they do next - "how much further", "am I
+        nearly there", "which way now".
+
+        Answer with what comes back and nothing else. The distance and time
+        are what is left from where they were last seen, which is within ten
+        metres of where they are. If `off_route` is true they have wandered
+        off it and a new route is already being worked out - say so, and that
+        you will have the way in a moment.
+        """
+        tracker = self._tracker
+
+        if tracker is None:
+            raise ToolError(
+                "Nobody is being guided anywhere just now. If they have a"
+                " destination saved, start_navigation begins the trip."
+            )
+
+        # Nothing has come in yet - either they have not moved since setting
+        # off, or their app never started reporting. One fix settles it, and
+        # answering "how far is left" with the whole route would be a lie if
+        # they had already walked half of it.
+        if tracker.updates == 0:
+            try:
+                tracker.update(await self._origin())
+            except ToolError:
+                logger.info("no fix to answer the progress question with")
+
+        progress = tracker.progress()
+
+        return {
+            "destination": tracker.destination_name,
+            "remaining": say_distance(progress.remaining_m),
+            "time_left": say_duration(progress.remaining_s),
+            "next": progress.next_instruction,
+            "off_route": progress.off_route,
+            "arrived": progress.arrived,
+            "instruction": (
+                "Give them the distance and the time left in a sentence. Only"
+                " mention the next turn if they asked which way to go."
+            ),
+        }
+
+    def _on_location(self, packet: rtc.DataPacket) -> None:
+        """A position from the user's app, arriving every ten metres they move.
+
+        This runs on the room's event loop rather than inside a turn, so it
+        waits for nothing: matching a fix to the route is arithmetic, and the
+        two things that are not - re-planning, closing the trip off - are
+        handed to a task.
+        """
+        tracker = self._tracker
+
+        if packet.topic != LOCATION_TOPIC or tracker is None:
+            return
+
+        try:
+            fix = read_location(packet.data)
+        except LocationUnavailable:
+            logger.warning("unreadable position on %s", LOCATION_TOPIC)
+
+            return
+
+        point = NavigationPoint(latitude=fix.latitude, longitude=fix.longitude)
+        cue = tracker.update(point, fix.accuracy_m)
+
+        if cue is None:
+            return
+
+        self._speak(cue.text)
+
+        if cue.kind == "arrive":
+            self._run(self._finish_trip(), "close the trip off")
+        elif cue.kind == "off_route":
+            self._run(self._reroute(point), "re-plan the route")
+
+    def _speak(self, text: str) -> None:
+        """Say something out loud that nobody asked for.
+
+        Guidance is spoken word for word rather than handed to the model to
+        phrase. "Turn left onto Pragya Marg now" has to reach the user at the
+        corner rather than after a round trip through an LLM, and it has to be
+        the turn the route says rather than one that sounded plausible.
+        """
+        try:
+            self.session.say(text, allow_interruptions=True)
+        except RuntimeError:
+            # The call ended between the fix arriving and this being said.
+            logger.info("could not say %r - the session is not running", text)
+
+    async def _reroute(self, point: NavigationPoint) -> None:
+        """Work out the way again from where the user actually is."""
+        if self._rerouting or self._travel_mode is None:
+            return
+
+        self._rerouting = True
+
+        try:
+            navigation = await self._active_navigation()
+
+            if navigation is None:
+                return
+
+            try:
+                route = await plan_route(
+                    point, navigation.destination, self._travel_mode
+                )
+            except RoutingError as err:
+                # Better to stop guiding than to keep counting down turns from
+                # a route they are no longer on.
+                self._tracker = None
+
+                self._speak(
+                    f"I am sorry - {err}, so I cannot put you back on track"
+                    " from here."
+                )
+
+                return
+
+            tracker = RouteTracker(route, navigation.destination_name)
+            self._tracker = tracker
+
+            logger.info(
+                "re-planned the way to %s for user %s",
+                navigation.destination_name,
+                self.userdata.user.id,
+            )
+
+            self._speak(f"I have the way from where you are now. {tracker.opening()}")
+        finally:
+            self._rerouting = False
+
+    async def _finish_trip(self) -> None:
+        """Close a trip off the moment the user reaches the door."""
+        navigation = await self._active_navigation()
+
+        self._stop_guidance()
+        self._navigation_id = None
+
+        if navigation is not None and navigation.status != "completed":
+            await change_navigation_status(navigation.id, "completed")
+
+            logger.info("navigation %s completed on arrival", navigation.id)
+
+    def _stop_guidance(self) -> None:
+        """Put the trip down, and let their phone stop watching the GPS."""
+        self._tracker = None
+        self._travel_mode = None
+
+        try:
+            room = get_job_context().room
+        except RuntimeError:
+            return
+
+        self._run(stop_location_stream(room), "stop the location stream")
+
+    def _run(self, coro, what: str) -> None:
+        """Background work that is not a database write, so it does not queue
+        behind the transcript."""
+
+        async def run() -> None:
+            try:
+                await coro
+            except Exception:
+                logger.exception("failed to %s", what)
+
+        task = asyncio.create_task(run())
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
