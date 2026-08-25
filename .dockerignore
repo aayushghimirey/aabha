@@ -1,0 +1,31 @@
+.git/
+.gitignore
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Secrets stay out of the image; compose passes them in as environment.
+.env
+.env.*
+!.env.example
+
+# The image is built from pyproject/uv.lock, not these.
+requirements.txt
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Browser-side dev page, served from disk rather than the container.
+dev/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.idea/
+.vscode/
+.DS_Store
