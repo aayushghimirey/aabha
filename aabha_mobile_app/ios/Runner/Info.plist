@@ -7,7 +7,15 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Aabha Mobile App</string>
+	<string>aabha</string>
+	<!-- App Transport Security blocks plain http. This exempts local
+	     addresses only, so the dev API on the same machine or LAN is
+	     reachable while everything else still has to be https. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

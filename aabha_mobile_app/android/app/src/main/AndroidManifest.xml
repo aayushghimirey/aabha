@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Every screen in this app is a call to the aabha API or a LiveKit room. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
-        android:label="aabha_mobile_app"
+        android:label="aabha"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
