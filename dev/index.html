@@ -213,6 +213,26 @@
       flex-wrap: wrap;
     }
 
+    .composer {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .composer input {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .composer button {
+      flex: none;
+    }
+
+    .composer input:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+
     .row>* {
       flex: 1 1 180px;
     }
@@ -503,11 +523,17 @@
           </div>
 
           <div class="card">
-            <h2>Transcript</h2>
-            <p class="sub">Live from the agent, over the <code>lk.transcription</code> text stream.</p>
+            <h2>Conversation</h2>
+            <p class="sub">Speech comes back over <code>lk.transcription</code>; typing goes out on
+              <code>lk.chat</code>. aabha answers out loud either way.</p>
             <div class="transcript" id="transcript">
               <div class="empty">Nothing said yet.</div>
             </div>
+            <form class="composer" id="chat-form">
+              <input id="chat-input" type="text" autocomplete="off" spellcheck="false"
+                placeholder="Connect to type to aabha" aria-label="Message aabha" disabled />
+              <button class="btn primary" id="chat-send" type="submit" disabled>Send</button>
+            </form>
           </div>
         </div>
 
@@ -583,6 +609,10 @@
     let token = null;     // TokenResponse
     let room = null;      // LivekitClient.Room
     const segments = new Map();
+
+    // Typed turns are never transcribed back to us, so they need ids of their
+    // own to sit in the same list as the spoken ones.
+    let typedCount = 0;
 
     const $ = (id) => document.getElementById(id);
 
@@ -837,6 +867,7 @@
         $("disconnect").classList.remove("hidden");
         $("mic").textContent = "Mute";
         $("s-since").textContent = new Date().toLocaleTimeString();
+        setChatEnabled(true);
 
         setState(
           room.remoteParticipants.size
@@ -869,7 +900,41 @@
       $("disconnect").classList.add("hidden");
       $("unblock-audio").classList.add("hidden");
       $("s-since").textContent = "—";
+      setChatEnabled(false);
     }
+
+    /* ------------------------------------------------------------------- chat */
+
+    // What the agent listens on for typed input. Its session enables text
+    // input by default, so anything sent here lands as a user turn and is
+    // answered the same way a spoken one would be - out loud.
+    const CHAT_TOPIC = "lk.chat";
+
+    function setChatEnabled(on) {
+      $("chat-input").disabled = !on;
+      $("chat-send").disabled = !on;
+      $("chat-input").placeholder = on ? "Type to aabha…" : "Connect to type to aabha";
+    }
+
+    $("chat-form").onsubmit = async (e) => {
+      e.preventDefault();
+
+      const text = $("chat-input").value.trim();
+      if (!text || !room) return;
+
+      $("chat-input").value = "";
+
+      // Only what is spoken comes back as transcription, so a typed turn is
+      // painted here or it is never seen at all.
+      segments.set(`typed-${++typedCount}`, { text, mine: true, final: true });
+      renderTranscript();
+
+      try {
+        await room.localParticipant.sendText(text, { topic: CHAT_TOPIC });
+      } catch (err) {
+        note($("voice-msg"), err.message || "That message did not send.");
+      }
+    };
 
     /* --------------------------------------------------------- geolocation */
 

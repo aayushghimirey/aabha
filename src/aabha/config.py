@@ -28,8 +28,15 @@ class Config:
     # Nominatim if that ever bites.
     NOMINATIM_URL: str = field(
         default_factory=lambda: os.getenv(
-            "NOMINATIM_URL"
+            "NOMINATIM_URL", "https://nominatim.openstreetmap.org/reverse"
         )
+    )
+
+    # Searches the name a user says out loud - "the German bakery in Jhamsikhel"
+    # - for coordinates. Without a key, destination lookup is turned off and the
+    # agent says so rather than guessing.
+    GEOAPIFY_API_KEY: str | None = field(
+        default_factory=lambda: os.getenv("GEOAPIFY_API_KEY")
     )
 
 

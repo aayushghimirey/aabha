@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import logging
-from contextlib import asynccontextmanager
 
 import aiohttp
-from livekit.agents.utils import http_context
 
 from aabha.config import config
+from aabha.services.http import session
 
 logger = logging.getLogger("aabha.agent")
 
@@ -59,8 +58,8 @@ async def describe_location(latitude: float, longitude: float) -> str | None:
     }
 
     try:
-        async with _session() as session:
-            async with session.get(
+        async with session() as http:
+            async with http.get(
                 config.NOMINATIM_URL,
                 params=params,
                 headers={"User-Agent": _USER_AGENT},
@@ -77,18 +76,6 @@ async def describe_location(latitude: float, longitude: float) -> str | None:
         return None
 
     return _name(body)
-
-
-@asynccontextmanager
-async def _session():
-    """Reuse the job's shared session where there is one, so the agent is not
-    opening a connection pool per question. Outside a job - a script, a test -
-    fall back to a session of our own."""
-    try:
-        yield http_context.http_session()
-    except RuntimeError:
-        async with aiohttp.ClientSession() as session:
-            yield session
 
 
 def _name(body: object) -> str | None:
