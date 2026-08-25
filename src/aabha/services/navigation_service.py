@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from math import asin, cos, radians, sin, sqrt
 
 import aiohttp
 
 from aabha.config import config
 from aabha.models.navigation import NavigationPoint
+from aabha.services.geo import distance_m
 from aabha.services.http import session
 from aabha.services.place_categories import PlaceCategory, resolve
 
@@ -398,7 +398,7 @@ def _candidate(
     # `distance` is from whatever region it matched, not from the user - it
     # calls a Kathmandu bank 1km away when the user is in Dharan, 219km off -
     # and a distance that is wrong is worse than one that is missing.
-    distance = _distance_m(origin, point) if origin is not None else None
+    distance = distance_m(origin, point) if origin is not None else None
 
     return DestinationCandidate(
         name=name,
@@ -472,19 +472,3 @@ def _is_duplicate(
         or (candidate.name == other.name and candidate.address == other.address)
         for other in seen
     )
-
-
-def _distance_m(origin: NavigationPoint, point: NavigationPoint) -> float:
-    """Great-circle distance. Not the walk, but enough to tell "the one across
-    the street" from "the one in the next district"."""
-    earth_radius_m = 6_371_000.0
-
-    lat1, lon1 = radians(origin.latitude), radians(origin.longitude)
-    lat2, lon2 = radians(point.latitude), radians(point.longitude)
-
-    haversine = (
-        sin((lat2 - lat1) / 2) ** 2
-        + cos(lat1) * cos(lat2) * sin((lon2 - lon1) / 2) ** 2
-    )
-
-    return 2 * earth_radius_m * asin(sqrt(haversine))

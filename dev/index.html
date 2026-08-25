@@ -835,7 +835,12 @@
       });
       room.on(RoomEvent.TrackUnsubscribed, (track) => track.detach().forEach((el) => el.remove()));
       room.on(RoomEvent.ParticipantConnected, () => setState("aabha is <b>listening</b>", true));
-      room.on(RoomEvent.ParticipantDisconnected, () => setState("The agent left the room", false));
+      room.on(RoomEvent.ParticipantDisconnected, () => {
+        // Nobody is reading the positions any more. Left alone the watch runs
+        // until the tab closes, holding the GPS on for the rest of the day.
+        stopWatching();
+        setState("The agent left the room", false);
+      });
       room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
         $("unblock-audio").classList.toggle("hidden", room.canPlaybackAudio);
       });
@@ -848,9 +853,11 @@
         await room.connect(token.server_url, token.token);
         room.registerTextStreamHandler("lk.transcription", onTranscription);
 
-        // Registered before dispatch, so the method already exists if the
+        // Registered before dispatch, so the methods already exist if the
         // agent asks for a location in its very first turn.
         room.localParticipant.registerRpcMethod(LOCATION_RPC_METHOD, handleLocationRequest);
+        room.localParticipant.registerRpcMethod(LOCATION_STREAM_START, handleStreamStart);
+        room.localParticipant.registerRpcMethod(LOCATION_STREAM_STOP, handleStreamStop);
 
         await room.localParticipant.setMicrophoneEnabled(true);
 
@@ -894,6 +901,9 @@
     }
 
     function onLeft() {
+      // Nobody is listening for positions any more, and a watch left running
+      // keeps the GPS - and the battery - busy for the rest of the day.
+      stopWatching();
       room = null;
       $("connect").classList.remove("hidden");
       $("mic").classList.add("hidden");
@@ -958,12 +968,12 @@
       3: "the location request timed out",
     };
 
-    function currentPosition() {
+    function currentPosition(maxAgeMs = LOCATION_MAX_AGE_MS) {
       return new Promise((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
           enableHighAccuracy: true,
           timeout: LOCATION_TIMEOUT_MS,
-          maximumAge: LOCATION_MAX_AGE_MS,
+          maximumAge: maxAgeMs,
         });
       });
     }
@@ -994,6 +1004,123 @@
       flashState("Shared your location with <b>aabha</b>");
 
       return JSON.stringify({ latitude, longitude, accuracy });
+    }
+
+    /* ----------------------------------------------- guiding you somewhere */
+
+    // While the agent is taking you somewhere it needs to know where you are
+    // as you move, not once. The browser reports every fix its GPS produces -
+    // several a second on foot - and all but one in ten metres is the same
+    // news told twice, so the filtering happens here rather than over the
+    // wire and at the far end.
+    const LOCATION_STREAM_START = "start_location_stream";
+    const LOCATION_STREAM_STOP = "stop_location_stream";
+    const LOCATION_TOPIC = "aabha.location";
+    const DEFAULT_STEP_M = 10;
+
+    // A car covers ten metres in under half a second, so distance alone is
+    // no limit at all on a fast road. This is the floor under how often the
+    // agent hears from us - and it cannot be raised much: at thirty metres a
+    // second a longer wait puts consecutive fixes far enough apart to step
+    // straight over the last few dozen metres before a turn, which is where
+    // "turn right now" has to be said or not said at all.
+    const MIN_SEND_MS = 700;
+
+    let locationWatch = null;
+    let lastSent = null;
+    let lastSentAt = 0;
+    let stepMetres = DEFAULT_STEP_M;
+
+    /** Metres between two fixes. Flat-earth arithmetic: over the ten metres
+     *  this has to resolve, the curvature of the planet is several orders
+     *  below the error on the fixes themselves. */
+    function metresBetween(from, to) {
+      const perDegree = 111320;
+      const dx = (to.longitude - from.longitude) * perDegree * Math.cos((from.latitude * Math.PI) / 180);
+      const dy = (to.latitude - from.latitude) * perDegree;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function onPosition(pos) {
+      if (!room) return;
+
+      const { latitude, longitude, accuracy } = pos.coords;
+      const now = Date.now();
+
+      if (lastSent && (metresBetween(lastSent, { latitude, longitude }) < stepMetres
+        || now - lastSentAt < MIN_SEND_MS)) {
+        return;
+      }
+
+      lastSent = { latitude, longitude };
+      lastSentAt = now;
+
+      // A fix that does not make it is replaced by the next one a few steps
+      // later, so a failed publish is not worth interrupting a walk over.
+      room.localParticipant
+        .publishData(
+          new TextEncoder().encode(JSON.stringify({ latitude, longitude, accuracy })),
+          { reliable: true, topic: LOCATION_TOPIC },
+        )
+        .catch(() => { });
+    }
+
+    function stopWatching() {
+      if (locationWatch !== null) navigator.geolocation.clearWatch(locationWatch);
+      locationWatch = null;
+      lastSent = null;
+      lastSentAt = 0;
+    }
+
+    /** The agent asks for this when a trip starts. */
+    async function handleStreamStart(data) {
+      if (!navigator.geolocation || !window.isSecureContext) {
+        throw refuse("this page cannot read a location - it is not served over https");
+      }
+
+      try {
+        stepMetres = JSON.parse(data.payload || "{}").step_m || DEFAULT_STEP_M;
+      } catch {
+        stepMetres = DEFAULT_STEP_M;
+      }
+
+      stopWatching();
+
+      // watchPosition reports a refused permission to its error callback,
+      // which fires long after this reply has been sent - by which time the
+      // agent has already promised to call the turns. Asking once first is
+      // what turns that into a refusal it can say out loud.
+      let first;
+      try {
+        first = await currentPosition(0);
+      } catch (err) {
+        throw refuse(GEO_REASONS[err && err.code] || "their device would not share a location");
+      }
+
+      onPosition(first);
+
+      locationWatch = navigator.geolocation.watchPosition(onPosition, onWatchFailed, {
+        enableHighAccuracy: true,
+        timeout: LOCATION_TIMEOUT_MS,
+        maximumAge: 0,
+      });
+
+      flashState("Sharing your location while <b>aabha</b> guides you");
+
+      return JSON.stringify({ streaming: true, step_m: stepMetres });
+    }
+
+    function handleStreamStop() {
+      stopWatching();
+      return JSON.stringify({ streaming: false });
+    }
+
+    /** A watch can fail long after it started - a permission revoked mid-trip,
+     *  a phone that loses its fix indoors. Nothing can be thrown from here, so
+     *  the only honest thing is to stop and say so on screen. */
+    function onWatchFailed(err) {
+      if (err && err.code === 1) stopWatching();
+      note($("voice-msg"), GEO_REASONS[err && err.code] || "Your location stopped coming through.");
     }
 
     /** Say something in the status line without losing the connection state

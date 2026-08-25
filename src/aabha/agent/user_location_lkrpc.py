@@ -8,9 +8,24 @@ from livekit import rtc
 
 logger = logging.getLogger("aabha.agent")
 
-# The name the browser registers its handler under; both sides have to agree,
-# so it lives here rather than being spelled out at the call site.
+# The names the browser registers its handlers under; both sides have to
+# agree, so they live here rather than being spelled out at the call sites.
+# The first asks once. The other two turn a running stream of positions on
+# and off, for when the user is being guided somewhere and standing still is
+# no longer the interesting case.
 LOCATION_RPC_METHOD = "get_current_location"
+LOCATION_STREAM_START = "start_location_stream"
+LOCATION_STREAM_STOP = "stop_location_stream"
+
+# The topic those streamed positions arrive on. Data messages rather than
+# RPC: nothing is being asked of the agent, and a fix that goes missing is
+# replaced by the next one a few steps later.
+LOCATION_TOPIC = "aabha.location"
+
+# How far the user has to move before their app sends another position.
+# Close enough that a turn is never missed between two fixes, far enough that
+# a phone sitting on a table says nothing at all.
+LOCATION_STEP_M = 10.0
 
 # The first ask puts a permission prompt in front of the user, and the wait is
 # then a human's rather than a network's - the 10s default is far too short.
@@ -52,6 +67,41 @@ async def ask_user_location(room: rtc.Room) -> Location:
     Raises LocationUnavailable for anything the user could plausibly fix -
     a denied prompt, a stale tab, a client that never registered the method.
     """
+    return _parse(await _call(room, LOCATION_RPC_METHOD, ""))
+
+
+async def start_location_stream(
+    room: rtc.Room, step_m: float = LOCATION_STEP_M
+) -> None:
+    """Ask the user's app to report where they are as they move.
+
+    From here until it is stopped, every `step_m` of travel arrives as a data
+    message on LOCATION_TOPIC. The browser will not do this without an open
+    permission, so the same refusals apply as for a single fix.
+    """
+    await _call(room, LOCATION_STREAM_START, json.dumps({"step_m": step_m}))
+
+    logger.info("asked the user's app for a position every %.0fm", step_m)
+
+
+async def stop_location_stream(room: rtc.Room) -> None:
+    """Let the user's app put the GPS down.
+
+    Best effort on purpose: this runs when a trip ends, and a trip that ends
+    because the user hung up has nobody left to tell.
+    """
+    try:
+        await _call(room, LOCATION_STREAM_STOP, "")
+    except LocationUnavailable as err:
+        logger.info("could not stop the location stream: %s", err)
+
+
+def read_location(data: bytes) -> Location:
+    """Read a position off the stream."""
+    return _parse(data.decode("utf-8", errors="replace"))
+
+
+async def _call(room: rtc.Room, method: str, payload: str) -> str:
     # A room with an agent in it normally holds exactly one other participant,
     # but an empty dict is reachable on a reconnect and must not raise
     # StopIteration out of a coroutine.
@@ -61,10 +111,10 @@ async def ask_user_location(room: rtc.Room) -> Location:
         raise LocationUnavailable("there is nobody in the call to ask")
 
     try:
-        payload = await room.local_participant.perform_rpc(
+        return await room.local_participant.perform_rpc(
             destination_identity=participant.identity,
-            method=LOCATION_RPC_METHOD,
-            payload="",
+            method=method,
+            payload=payload,
             response_timeout=_RESPONSE_TIMEOUT,
         )
     except rtc.RpcError as err:
@@ -72,11 +122,9 @@ async def ask_user_location(room: rtc.Room) -> Location:
         # and carries its own message - "location permission was denied" and
         # the like - which is more use than anything written here.
         reason = _RPC_REASONS.get(err.code) or err.message
-        logger.info("location request failed (%s): %s", err.code, err.message)
+        logger.info("%s failed (%s): %s", method, err.code, err.message)
 
         raise LocationUnavailable(reason) from err
-
-    return _parse(payload)
 
 
 def _parse(payload: str) -> Location:
