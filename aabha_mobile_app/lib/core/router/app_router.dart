@@ -2,8 +2,10 @@ import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../presentation/screens/auth/auth_screen.dart';
-import '../../presentation/screens/home/home_screen.dart';
+import '../../presentation/screens/home/home_shell.dart';
+import '../../presentation/screens/profile/profile_screen.dart';
 import '../../presentation/screens/splash/splash_screen.dart';
+import '../../presentation/screens/talk/talk_screen.dart';
 import 'app_routes.dart';
 
 abstract final class AppRouter {
@@ -50,10 +52,30 @@ abstract final class AppRouter {
           name: AppRoutes.authName,
           builder: (context, state) => const AuthScreen(),
         ),
-        GoRoute(
-          path: AppRoutes.home,
-          name: AppRoutes.homeName,
-          builder: (context, state) => const HomeScreen(),
+        // One shell, one branch per tab: each keeps its own stack, so a live
+        // voice session is not torn down by a look at the profile.
+        StatefulShellRoute.indexedStack(
+          builder: (context, state, shell) => HomeShell(shell: shell),
+          branches: [
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: AppRoutes.talk,
+                  name: AppRoutes.talkName,
+                  builder: (context, state) => const TalkScreen(),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: AppRoutes.profile,
+                  name: AppRoutes.profileName,
+                  builder: (context, state) => const ProfileScreen(),
+                ),
+              ],
+            ),
+          ],
         ),
       ],
     );
