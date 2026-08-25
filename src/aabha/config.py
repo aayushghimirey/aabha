@@ -39,5 +39,12 @@ class Config:
         default_factory=lambda: os.getenv("GEOAPIFY_API_KEY")
     )
 
+    # Plans the way from where the user is to where they are going, and the
+    # turns along it. Without a key the agent can still save a destination -
+    # it just cannot take anyone there.
+    OPEN_ROUTE_API_KEY: str | None = field(
+        default_factory=lambda: os.getenv("OPEN_ROUTE_API_KEY")
+    )
+
 
 config = Config()
