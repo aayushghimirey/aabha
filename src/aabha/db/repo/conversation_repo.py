@@ -44,17 +44,27 @@ async def insert_conversation_summary(
         return Conversation.model_validate(row) if row else None
 
 
-async def get_conversations(user_id: UUID, limit: int = 5) -> list[Conversation]:
-    """The user's most recent conversations, newest first."""
+async def get_summarised_conversations(
+    user_id: UUID, limit: int = 5, exclude_id: UUID | None = None
+) -> list[Conversation]:
+    """The user's most recently summarised conversations, newest first.
+
+    A NULL summary means the call is still open or was cut off before it could
+    be written up, and there is nothing to read back from it. `exclude_id`
+    leaves out the call being had right now, which is opened before the context
+    is built and so would otherwise come back as the newest row.
+    """
     async with get_cursor() as cursor:
         await cursor.execute(
             f"""
             SELECT {_COLUMNS} FROM conversation
             WHERE user_id = %s
+              AND summary IS NOT NULL
+              AND id IS DISTINCT FROM %s::uuid
             ORDER BY created_at DESC
             LIMIT %s
             """,
-            (user_id, limit),
+            (user_id, exclude_id, limit),
         )
 
         rows = await cursor.fetchall()
