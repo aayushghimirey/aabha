@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug builds only — this file lives in the debug source set, so a release
+  build never sees it and still cannot speak cleartext to anything.
+
+  The dev API is plain http and its address moves: 10.0.2.2 from the emulator,
+  a DHCP-assigned LAN address from a physical device. Pinning the exact host
+  here means a new lease silently turns the health dot red with nothing to
+  explain why, so debug builds allow cleartext generally instead.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
