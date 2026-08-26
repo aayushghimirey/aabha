@@ -1,15 +1,22 @@
 from __future__ import annotations
 
-from livekit.agents import Agent, ChatContext, ChatMessage, function_tool, llm
+import logging
 
-from aabha.agent.prompt import AGENT_PROMPT, SUMMARY_INSTRUCTIONS
+from livekit.agents import (
+    Agent,
+    ChatContext,
+    ChatMessage,
+    ToolError,
+    function_tool,
+)
+
+from aabha.agent.prompt import AGENT_PROMPT
 from aabha.db.model.memory import MemoryKind
 from aabha.service.conversation_service import UserConversation
+from aabha.service.location_service import LocationUnavailable, UserLocation
 from aabha.service.memory_service import MemoryAction, UserMemory
 
-# The tail of a long call is the part worth summarising, and it keeps the
-# request inside the model's context window.
-_MAX_TRANSCRIPT_CHARS = 8000
+logger = logging.getLogger("aabha.agent")
 
 _SPOKEN_ROLES = ("user", "assistant")
 
@@ -17,13 +24,14 @@ _SPOKEN_ROLES = ("user", "assistant")
 class AabhaAgent(Agent):
     """The conversation itself. Everything it needs is handed to it: the
     memories are already in `chat_ctx`, and the conversation row is already
-    open. It reads nothing at startup and knows no user id - the entrypoint
-    does that work, so this stays a thing that talks."""
+    open. It reads nothing at startup - the entrypoint does that work, so this
+    stays a thing that talks."""
 
     def __init__(
         self,
         memory: UserMemory,
         conversation: UserConversation,
+        location: UserLocation,
         chat_ctx: ChatContext | None = None,
     ) -> None:
         super().__init__(instructions=AGENT_PROMPT, chat_ctx=chat_ctx)
@@ -33,9 +41,24 @@ class AabhaAgent(Agent):
         # we summarize the user's conversation on exit, this object holds summarize_conversation and create_conversation
         # create_conversation is done
         self._conversation = conversation
+        # asks the user's device where they are, and names the place for us
+        self._location = location
 
     async def on_exit(self) -> None:
-        await self._conversation.summarise()
+        await self.summarise()
+
+    async def summarise(self) -> None:
+        """Leaves the summary of this call behind. Called on the way out and
+        again from the job's shutdown callback, because a dropped connection
+        does not always unwind through on_exit - the conversation itself only
+        writes once."""
+        try:
+            session = self.session
+        except RuntimeError:
+            # Shutdown reached us before the session ever started.
+            return
+
+        await self._conversation.summarise(session, self._spoken())
 
     @function_tool
     async def manage_memory(
@@ -71,6 +94,47 @@ class AabhaAgent(Agent):
             importance=importance,
         )
 
+    @function_tool
+    async def ask_current_coordinates(self) -> dict[str, float]:
+        """Ask the user's device for their latitude and longitude.
+
+        Use this when something has to be worked out from where they are
+        rather than said about it: how far away something is, which way it is,
+        anything you hand to a map or a search that wants numbers. Never read
+        the numbers out - if you want to say where they are, ask for the
+        address instead.
+        """
+        try:
+            coordinates = await self._location.current_coordinates()
+        except LocationUnavailable as e:
+            raise ToolError(str(e))
+
+        return coordinates.model_dump()
+
+    @function_tool
+    async def ask_current_address(self) -> dict:
+        """Ask where the user is, in words.
+
+        Use this when what they asked for depends on the place they are in -
+        the weather, what is nearby, what time it is for them - and they have
+        not said where that is.
+
+        The answer is the place in full: a one-line `formatted` address, the
+        parts it is made of (street, city, state, country), the name of what
+        they are standing at when it is something nameable, and its time zone.
+        Take from it whatever the question needs. Whatever is not known is
+        left out.
+        """
+        try:
+            location = await self._location.current_address()
+        except LocationUnavailable as e:
+            # Why it failed is the user's answer as much as a location would
+            # be - a refused permission is not a device that never replied.
+            raise ToolError(str(e))
+
+        # Unknowns are dropped rather than sent as nulls: a field that is not
+        # there reads as "not known", which is what it means.
+        return location.model_dump(exclude_none=True)
 
     def _spoken(self) -> list[str]:
         """What was actually said, as transcript lines. The memories handed in

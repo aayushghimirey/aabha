@@ -1,12 +1,16 @@
 from uuid import UUID
 
-from livekit.agents import AgentSession, ChatContext
+from livekit.agents import AgentSession, ChatContext, llm
 
 from aabha.agent.prompt import SUMMARY_INSTRUCTIONS
+from aabha.db.model.conversation import Conversation
 from aabha.db.repo import conversation_repo
-from livekit.agents import llm
 
 _MAX_TRANSCRIPT_CHARS = 8000
+
+# Two calls back is enough to pick up a thread the user left hanging. More than
+# that and the model starts answering out of the past instead of the present.
+_RECALL_LIMIT = 2
 
 
 class UserConversation:
@@ -47,15 +51,14 @@ class UserConversation:
             message_count=message_count,
         )
 
-    async def summarise(self, session: AgentSession) -> None:
+    async def summarise(self, session: AgentSession, spoken: list[str]) -> None:
         """Sum the call up and leave it on the conversation the entrypoint
         opened.
 
-        Safe to call twice, and the job's shutdown callback should call it too:
-        a dropped connection does not always unwind through on_exit.
+        The transcript is handed in - the agent is the one holding it. Safe to
+        call twice, and the job's shutdown callback should call it too: a
+        dropped connection does not always unwind through on_exit.
         """
-        spoken = self._spoken()
-
         if not spoken:
             return
 
@@ -82,4 +85,38 @@ class UserConversation:
         if not response.text:
             return
 
-        await self._conversation.summarize_conversation(response.text, len(spoken))
+        await self.summarize_conversation(response.text, len(spoken))
+
+    async def get_conversations(self) -> list[Conversation]:
+        """The calls worth reading back - summarised, and not this one."""
+        return await conversation_repo.get_summarised_conversations(
+            user_id=self.user_id,
+            limit=_RECALL_LIMIT,
+            exclude_id=self.conversation_id,
+        )
+
+    async def recall(self) -> str | None:
+        """What the agent is told about calls that already happened, or None
+        when there are none.
+
+        Deliberately framed as background rather than as an agenda: the user
+        starts a call to talk about something now, and an assistant that opens
+        by picking up where it left off is answering a question nobody asked.
+        """
+        conversations = await self.get_conversations()
+
+        if not conversations:
+            return None
+
+        # Oldest first, so the list reads forwards to the present.
+        lines = "\n".join(
+            f"- {conversation.summary}" for conversation in reversed(conversations)
+        )
+
+        return (
+            "Notes from this user's last few calls, oldest first. This is"
+            " background only. Treat this call as a fresh start: do not greet"
+            " them with it, do not bring any of it up, and do not ask how"
+            " something from it turned out. Use it only when it answers"
+            " something they have actually asked about now.\n" + lines
+        )

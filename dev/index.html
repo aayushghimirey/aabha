@@ -637,6 +637,8 @@
               <dd id="s-since">—</dd>
               <dt>Agent</dt>
               <dd id="s-agent">—</dd>
+              <dt>Location</dt>
+              <dd id="s-location">—</dd>
             </dl>
           </div>
         </div>
@@ -944,6 +946,7 @@
       try {
         await room.connect(token.server_url, token.token);
         room.registerTextStreamHandler(TRANSCRIPTION_TOPIC, onTranscription);
+        registerCoordinatesRpc(room);
 
         await room.localParticipant.setMicrophoneEnabled(true);
 
@@ -995,8 +998,83 @@
       $("disconnect").classList.add("hidden");
       $("unblock-audio").classList.add("hidden");
       $("s-since").textContent = "—";
+      setLocation("—");
       setAgent(false);
       setChatEnabled(false);
+    }
+
+    /* --------------------------------------------------------------- location */
+
+    // The agent calls this over RPC when it needs to know where the user is.
+    // It has to be registered on every connect: the handler lives on the room
+    // object, and connect() builds a new one each time.
+    const COORDINATES_RPC_METHOD = "get_current_coordinates";
+
+    // Under the 20s the agent waits, so a browser that never answers still
+    // fails here - with something to say - rather than as a timeout there.
+    const GEO_TIMEOUT_MS = 15000;
+
+    // Application errors start at 1500; anything the agent should read back to
+    // the user goes out with this code and a message worth hearing.
+    const RPC_APPLICATION_ERROR = 1500;
+
+    function setLocation(text, kind) {
+      const el = $("s-location");
+      el.textContent = text;
+      el.style.color = kind === "err" ? "var(--danger)" : kind === "ok" ? "var(--ok)" : "";
+    }
+
+    function currentPosition() {
+      return new Promise((resolve, reject) => {
+        // Geolocation is only handed out on a secure origin, so a page served
+        // over plain http from anything but localhost never gets the prompt.
+        if (!navigator.geolocation) {
+          reject(new Error(window.isSecureContext
+            ? "This browser has no geolocation."
+            : "The browser only shares location over https or from localhost."));
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: GEO_TIMEOUT_MS,
+          maximumAge: 0,
+        });
+      });
+    }
+
+    function registerCoordinatesRpc(room) {
+      // Registering twice throws, and connect() is called again on every
+      // rejoin - harmless today because each connect builds a fresh Room, but
+      // it costs nothing to not depend on that.
+      room.localParticipant.unregisterRpcMethod(COORDINATES_RPC_METHOD);
+
+      room.localParticipant.registerRpcMethod(COORDINATES_RPC_METHOD, async () => {
+        setLocation("asked…");
+
+        let position;
+        try {
+          position = await currentPosition();
+        } catch (err) {
+          // A refusal is the user's answer, not a fault - the agent is told
+          // what happened so it can ask them where they are instead.
+          const denied = err && err.code === 1;
+          const why = denied
+            ? "The user declined to share their location."
+            : (err && err.message) || "The device could not get a location fix.";
+
+          setLocation(denied ? "declined" : "unavailable", "err");
+          throw new LivekitClient.RpcError(RPC_APPLICATION_ERROR, why);
+        }
+
+        const { latitude, longitude } = position.coords;
+
+        setLocation(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`, "ok");
+
+        // The agent parses this into its Coordinates model, so the two field
+        // names have to stay as they are.
+        return JSON.stringify({ latitude, longitude });
+      });
     }
 
     /* ------------------------------------------------------------------- chat */

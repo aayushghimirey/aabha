@@ -22,6 +22,7 @@ from aabha.db.conn_pool import close_connection_pool, open_connection_pool
 from aabha.db.repo.user_repo import find_user_by_id
 from aabha.service.conversation_service import UserConversation
 from aabha.service.livekit_service import AGENT_NAME
+from aabha.service.location_service import UserLocation
 from aabha.service.memory_service import UserMemory
 
 load_dotenv()
@@ -36,15 +37,25 @@ TTS_MODEL = os.getenv("AABHA_TTS_MODEL", "cartesia/sonic-2")
 server = AgentServer()
 
 
-async def build_agent_context(memory: UserMemory) -> ChatContext:
-    """What the agent starts the call knowing. Empty when there is nothing
-    remembered about this user yet - a first call, not an error."""
+async def build_agent_context(
+    memory: UserMemory, conversation: UserConversation
+) -> ChatContext:
+    """What the agent starts the call knowing: what is remembered about the
+    user, and notes from the calls before this one. Empty when there is nothing
+    of either yet - a first call, not an error.
+
+    The conversation row for this call is already open by now, so recall leaves
+    it out rather than handing the agent an empty summary of itself."""
     chat_ctx = ChatContext.empty()
 
-    known = await memory.recall()
+    memories = await memory.recall()
+    conversations = await conversation.recall()
 
-    if known is not None:
-        chat_ctx.add_message(role="system", content=known)
+    if memories is not None:
+        chat_ctx.add_message(role="system", content=memories)
+
+    if conversations is not None:
+        chat_ctx.add_message(role="system", content=conversations)
 
     return chat_ctx
 
@@ -96,17 +107,19 @@ async def entrypoint(ctx: JobContext) -> None:
         ctx.shutdown(reason="unknown user")
         return
 
-    # Both resolved before the agent starts, so nothing during the call has to
+    # All resolved before the agent starts, so nothing during the call has to
     # wait for them or handle them being missing.
     memory = UserMemory(user.id)
     conversation = UserConversation(user.id)
+    location = UserLocation(participant.identity)
 
     await conversation.create_conversation()
 
     agent = AabhaAgent(
         memory=memory,
         conversation=conversation,
-        chat_ctx=await build_agent_context(memory),
+        location=location,
+        chat_ctx=await build_agent_context(memory, conversation),
     )
 
     session = AgentSession(
@@ -119,7 +132,7 @@ async def entrypoint(ctx: JobContext) -> None:
         allow_interruptions=True,
         min_endpointing_delay=0.5,
         max_endpointing_delay=3.0,
-        vad=inference.VAD(model="silero", activation_threshold=0.5),
+        vad=inference.VAD(model="silero", activation_threshold=0.6),
         tools=[
             mcp.MCPToolset(
                 id="tavily", mcp_server=mcp.MCPServerHTTP(url=config.TAVILY_MCP_URL)
