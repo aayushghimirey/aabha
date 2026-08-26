@@ -1,39 +1,85 @@
 from uuid import UUID
 
-from aabha.db.pool import get_cursor
-from aabha.models.memory import MEMORY_KINDS, Memory
+from aabha.db.conn_pool import get_cursor
+from aabha.db.model.memory import Memory, MemoryDraft
 
-_COLUMNS = "id, user_id, kind, key, content, created_at, updated_at"
+_COLUMNS = (
+    "id, user_id, key, kind, content, source, importance,"
+    " created_at, updated_at, last_used_at"
+)
 
 
-async def upsert_memory(
-    user_id: UUID, kind: MEMORY_KINDS, key: str, content: str
-) -> Memory:
-    """Records a memory, overwriting whatever was previously stored under `key`
-    for this user (the table is unique on (user_id, key))."""
+async def upsert_memory(user_id: UUID, draft: MemoryDraft) -> Memory:
+    """Stores a memory under its key, overwriting whatever this user already
+    had under that key. One key, one fact - which is what stops the same thing
+    being remembered three ways."""
     async with get_cursor() as cursor:
         await cursor.execute(
-            f"INSERT INTO memories (user_id, kind, key, content)"
-            f" VALUES (%s, %s, %s, %s)"
-            f" ON CONFLICT (user_id, key) DO UPDATE"
-            f" SET kind = EXCLUDED.kind, content = EXCLUDED.content,"
-            f"     updated_at = now()"
-            f" RETURNING {_COLUMNS}",
-            (user_id, kind, key, content),
+            f"""
+            INSERT INTO memory (user_id, key, kind, content, source, importance)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (user_id, key) DO UPDATE
+                SET kind = EXCLUDED.kind,
+                    content = EXCLUDED.content,
+                    source = EXCLUDED.source,
+                    importance = EXCLUDED.importance,
+                    updated_at = now()
+            RETURNING {_COLUMNS}
+            """,
+            (
+                user_id,
+                draft.key,
+                draft.kind,
+                draft.content,
+                draft.source,
+                draft.importance,
+            ),
         )
+
         row = await cursor.fetchone()
+
         return Memory.model_validate(row)
 
 
-async def get_memories(
-    user_id: UUID, kind: MEMORY_KINDS | None = None, limit: int = 20
-) -> list[Memory]:
+async def delete_memory(user_id: UUID, key: str) -> bool:
+    """False when this user has nothing under that key, so a key the assistant
+    guessed at is a miss rather than a reach into someone else's memories."""
     async with get_cursor() as cursor:
         await cursor.execute(
-            f"SELECT {_COLUMNS} FROM memories"
-            f" WHERE user_id = %s AND (%s::TEXT IS NULL OR kind = %s)"
-            f" ORDER BY updated_at DESC LIMIT %s",
-            (user_id, kind, kind, limit),
+            "DELETE FROM memory WHERE user_id = %s AND key = %s",
+            (user_id, key),
         )
+
+        return cursor.rowcount > 0
+
+
+async def get_memories(user_id: UUID, limit: int = 50) -> list[Memory]:
+    """The user's memories, the ones worth knowing first."""
+    async with get_cursor() as cursor:
+        await cursor.execute(
+            f"""
+            SELECT {_COLUMNS} FROM memory
+            WHERE user_id = %s
+            ORDER BY importance DESC, updated_at DESC
+            LIMIT %s
+            """,
+            (user_id, limit),
+        )
+
         rows = await cursor.fetchall()
+
         return [Memory.model_validate(row) for row in rows]
+
+
+async def touch_memories(user_id: UUID, memory_ids: list[UUID]) -> None:
+    """Marks memories as having been recalled. What has not been used in a long
+    time is what to drop first once a user has more than fits in a prompt."""
+    if not memory_ids:
+        return
+
+    async with get_cursor() as cursor:
+        await cursor.execute(
+            "UPDATE memory SET last_used_at = now()"
+            " WHERE user_id = %s AND id = ANY(%s)",
+            (user_id, memory_ids),
+        )

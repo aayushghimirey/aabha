@@ -1,67 +1,61 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS users (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    username    TEXT        NOT NULL UNIQUE,
-    email       TEXT        NOT NULL UNIQUE,
-    password    TEXT        NOT NULL,
-    dob         TIMESTAMPTZ NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username       TEXT        NOT NULL CHECK (length(username) BETWEEN 3 AND 32),
+    email          TEXT        NOT NULL,
+    password_hash  TEXT        NOT NULL,
+    dob            DATE        NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS memories (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id     UUID        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    kind        TEXT        NOT NULL DEFAULT 'preference'
-                CHECK (kind IN ('preference', 'fact', 'habit', 'goal', 'contact', 'navigation')),
-    key         TEXT        NOT NULL,
-    content     TEXT        NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+-- Case-folded, so "Aayush" and "aayush" cannot both be registered while the
+-- column still keeps whatever casing the user chose for themselves.
+CREATE UNIQUE INDEX IF NOT EXISTS users_username_key ON users (lower(username));
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_key ON users (lower(email));
+
+-- Memories and conversations die with the user they belong to.
+
+CREATE TABLE IF NOT EXISTS memory (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       UUID        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    key           TEXT        NOT NULL CHECK (length(key) BETWEEN 1 AND 64),
+    kind          TEXT        NOT NULL DEFAULT 'fact'
+                  CHECK (kind IN ('preference', 'habit', 'fact')),
+    content       TEXT        NOT NULL CHECK (length(content) BETWEEN 1 AND 2000),
+    source        TEXT        NOT NULL DEFAULT 'conversation'
+                  CHECK (source IN ('user', 'agent', 'conversation', 'system')),
+    importance    SMALLINT    NOT NULL DEFAULT 5 CHECK (importance BETWEEN 1 AND 10),
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_used_at  TIMESTAMPTZ,
+
+    -- The handle the assistant names a memory by. Saving under a key that is
+    -- already taken overwrites it, which is what keeps one fact from being
+    -- stored three ways.
     UNIQUE (user_id, key)
 );
 
-CREATE INDEX IF NOT EXISTS memories_user_kind_idx ON memories (user_id, kind);
+-- Recall reads a user's whole set, most important first, so the index carries
+-- the ordering rather than leaving it to a sort.
+CREATE INDEX IF NOT EXISTS memory_user_recall_idx
+    ON memory (user_id, importance DESC, updated_at DESC);
 
-CREATE TABLE IF NOT EXISTS conversations (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id         UUID        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    messages_count  INTEGER     NOT NULL DEFAULT 0 CHECK (messages_count >= 0),
-    summary         TEXT        NOT NULL DEFAULT '',
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+
+CREATE TABLE IF NOT EXISTS conversation (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id        UUID        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+
+    -- NULL until the call ends, which is what tells a conversation that was
+    -- summarised apart from one that was cut off before it could be.
+    summary        TEXT,
+
+    message_count  INTEGER     NOT NULL DEFAULT 0 CHECK (message_count >= 0),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_used_at   TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS conversations_user_recent_idx
-    ON conversations (user_id, updated_at DESC);
-
-CREATE TABLE IF NOT EXISTS messages (
-    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    conversation_id  UUID        NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
-    role             TEXT        NOT NULL CHECK (role IN ('user', 'assistant')),
-    content          TEXT        NOT NULL,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
-    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS messages_conversation_idx
-    ON messages (conversation_id, created_at);
-
-CREATE TABLE IF NOT EXISTS navigations (
-    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id               UUID             NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    destination_name      TEXT             NOT NULL,
-    destination_address   TEXT             NOT NULL DEFAULT '',
-    start_latitude        DOUBLE PRECISION NOT NULL,
-    start_longitude       DOUBLE PRECISION NOT NULL,
-    destination_latitude  DOUBLE PRECISION NOT NULL,
-    destination_longitude DOUBLE PRECISION NOT NULL,
-    status                TEXT             NOT NULL DEFAULT 'pending'
-                          CHECK (status IN ('pending', 'started', 'completed', 'failed')),
-    created_at            TIMESTAMPTZ      NOT NULL DEFAULT now(),
-    updated_at            TIMESTAMPTZ      NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS navigations_user_recent_idx
-    ON navigations (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS conversation_user_recent_idx
+    ON conversation (user_id, created_at DESC);

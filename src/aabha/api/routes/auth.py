@@ -1,80 +1,36 @@
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from aabha.api.dto.auth import AuthRequest, TokenResponse
-from aabha.api.dto.user import UserResponse
-from aabha.config import config
-from aabha.db.repo.user_repo import find_user_by_username
-from aabha.models.user import User
-from aabha.services.livekit_service import (
-    claims_for,
-    create_dispatch,
-    create_token,
-    room_for,
-)
-from aabha.services.security import verify_password
+from aabha.api.dependencies import authenticate
+from aabha.api.dto.user import SignUpRequest, UserResponse
+from aabha.db.model.user import User
+from aabha.service import user_service
+from aabha.service.user_service import UsernameOrEmailTaken
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-_INVALID_CREDENTIALS = HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="Invalid username or password",
+
+@router.post(
+    "/signup",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
 )
-
-
-async def check_credentials(payload: AuthRequest) -> User:
-    user = await find_user_by_username(payload.username)
-    if user is None:
-        raise _INVALID_CREDENTIALS
-
-    if not verify_password(user.password, payload.password):
-        raise _INVALID_CREDENTIALS
-
-    return user
-
-
-@router.post("/login", response_model=UserResponse)
-async def login(payload: AuthRequest) -> UserResponse:
-    user = await check_credentials(payload)
-    return UserResponse.model_validate(user, from_attributes=True)
-
-
-@router.post("/token", response_model=TokenResponse)
-async def issue_token(payload: AuthRequest) -> TokenResponse:
-    """Exchange username + password for a LiveKit access token."""
-    user = await check_credentials(payload)
-
-    return TokenResponse(
-        token=create_token(user.id, user.username),
-        server_url=config.LIVEKIT_URL,
-        room=room_for(user.id),
-        identity=str(user.id),
-    )
-
-
-@router.post("/dispatch", status_code=status.HTTP_204_NO_CONTENT)
-async def dispatch(authorization: str = Header(...)) -> None:
-    """Start an agent job for the caller's room.
-
-    The frontend calls this on every connect, not just at sign-in: the room
-    name is stable per user, so a reconnect can reuse a room that LiveKit
-    already created and would otherwise never dispatch into. The LiveKit token
-    is the credential, which keeps the password out of the reconnect path.
-    """
-    scheme, _, token = authorization.partition(" ")
-
-    if scheme.lower() != "bearer" or not token:
-        raise _INVALID_CREDENTIALS
-
+async def sign_up(payload: SignUpRequest) -> UserResponse:
     try:
-        claims = claims_for(token)
-    except Exception:
-        raise _INVALID_CREDENTIALS
+        user = await user_service.sign_up(
+            username=payload.username,
+            email=payload.email,
+            password=payload.password,
+            dob=payload.dob,
+        )
+    except UsernameOrEmailTaken:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username or email already taken",
+        )
 
-    # Dispatch into the room the token actually grants, so a caller cannot
-    # start an agent in someone else's session by asking for it.
-    room = claims.video.room if claims.video else None
+    return UserResponse.model_validate(user)
 
-    if not room:
-        raise _INVALID_CREDENTIALS
 
-    await create_dispatch(room)
+@router.post("/signin", response_model=UserResponse)
+async def sign_in(user: User = Depends(authenticate)) -> UserResponse:
+    return UserResponse.model_validate(user)

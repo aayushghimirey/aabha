@@ -4,25 +4,25 @@ import logging
 import os
 from uuid import UUID
 
+from dotenv import load_dotenv
 from livekit.agents import (
     AgentServer,
     AgentSession,
+    ChatContext,
     JobContext,
-    cli,
     TurnHandlingOptions,
+    cli,
     inference,
     mcp,
 )
 
-from aabha.agent.assistant_agent import AssistantAgent
-from aabha.agent.user_session import UserSession
+from aabha.agent.agent import AabhaAgent
 from aabha.config import config
-from aabha.db.pool import close_pool, open_pool
-from aabha.db.repo.conversation_repo import create_conversation
+from aabha.db.conn_pool import close_connection_pool, open_connection_pool
 from aabha.db.repo.user_repo import find_user_by_id
-from aabha.services.agent_context import get_agent_context
-from aabha.services.livekit_service import AGENT_NAME
-from dotenv import load_dotenv
+from aabha.service.conversation_service import UserConversation
+from aabha.service.livekit_service import AGENT_NAME
+from aabha.service.memory_service import UserMemory
 
 load_dotenv()
 
@@ -33,9 +33,31 @@ LLM_MODEL = os.getenv("AABHA_LLM_MODEL", "openai/gpt-4.1-mini")
 STT_MODEL = os.getenv("AABHA_STT_MODEL", "deepgram/nova-3")
 TTS_MODEL = os.getenv("AABHA_TTS_MODEL", "cartesia/sonic-2")
 
-# `lk agent dev|start` discovers this by name; the __main__ block below keeps
-# `python -m aabha.agent.worker` working too.
 server = AgentServer()
+
+
+async def build_agent_context(memory: UserMemory) -> ChatContext:
+    """What the agent starts the call knowing. Empty when there is nothing
+    remembered about this user yet - a first call, not an error."""
+    chat_ctx = ChatContext.empty()
+
+    known = await memory.recall()
+
+    if known is not None:
+        chat_ctx.add_message(role="system", content=known)
+
+    return chat_ctx
+
+
+def identity_to_user_id(identity: str) -> UUID | None:
+    """Tokens are minted with the user id as the identity (see
+    livekit_service), but anyone can join a room with an identity of their
+    choosing."""
+    try:
+        return UUID(identity)
+    except ValueError:
+        logger.warning("participant identity is not a uuid: %r", identity)
+        return None
 
 
 # Named, so LiveKit only starts a job when the API explicitly dispatches one.
@@ -43,26 +65,25 @@ server = AgentServer()
 # reconnect into a still-alive room never triggers.
 @server.rtc_session(agent_name=AGENT_NAME)
 async def entrypoint(ctx: JobContext) -> None:
-    await open_pool()
+    await open_connection_pool()
 
-    agent: AssistantAgent | None = None
+    agent: AabhaAgent | None = None
 
     async def shutdown() -> None:
-        # Shutdown callbacks are gathered, not run in order, so the summary
-        # write and the pool teardown have to be sequenced here - otherwise
-        # the pool can close underneath the write.
-
+        # Shutdown callbacks are gathered rather than run in order, so the
+        # summary write and the pool teardown have to be sequenced here -
+        # otherwise the pool can close underneath the write.
         if agent is not None:
-            await agent.finalise()
+            await agent.summarise()
 
-        await close_pool()
+        await close_connection_pool()
 
     ctx.add_shutdown_callback(shutdown)
 
     await ctx.connect()
 
     participant = await ctx.wait_for_participant()
-    user_id = _identity_to_user_id(participant.identity)
+    user_id = identity_to_user_id(participant.identity)
 
     if user_id is None:
         ctx.shutdown(reason="participant identity is not a user id")
@@ -75,14 +96,20 @@ async def entrypoint(ctx: JobContext) -> None:
         ctx.shutdown(reason="unknown user")
         return
 
-    # Resolved before the agent starts, so nothing that runs during the
-    # conversation has to wait for it or handle it being missing.
-    userdata = UserSession(user=user, conversation=await create_conversation(user.id))
+    # Both resolved before the agent starts, so nothing during the call has to
+    # wait for them or handle them being missing.
+    memory = UserMemory(user.id)
+    conversation = UserConversation(user.id)
 
-    agent = AssistantAgent(chat_ctx=await get_agent_context(user.id))
+    await conversation.create_conversation()
 
-    session = AgentSession[UserSession](
-        userdata=userdata,
+    agent = AabhaAgent(
+        memory=memory,
+        conversation=conversation,
+        chat_ctx=await build_agent_context(memory),
+    )
+
+    session = AgentSession(
         llm=LLM_MODEL,
         stt=STT_MODEL,
         tts=TTS_MODEL,
@@ -101,20 +128,10 @@ async def entrypoint(ctx: JobContext) -> None:
     )
 
     logger.info(
-        "starting conversation %s for %s", userdata.conversation.id, user.username
+        "starting conversation %s for %s", conversation.conversation_id, user.username
     )
 
     await session.start(agent, room=ctx.room)
-
-
-def _identity_to_user_id(identity: str) -> UUID | None:
-    """Tokens are minted with the user id as the identity (see livekit_service),
-    but anyone can join a room with an identity of their choosing."""
-    try:
-        return UUID(identity)
-    except ValueError:
-        logger.warning("participant identity is not a uuid: %r", identity)
-        return None
 
 
 if __name__ == "__main__":
