@@ -40,7 +40,7 @@ dependencies:
   flutter_secure_storage: ^11.0.0
   livekit_client: ^2.11.0
   geolocator: ^14.0.3
-  permission_handler: 12.0.0
+  permission_handler: 13.0.1
 
 dev_dependencies:
   flutter_test:

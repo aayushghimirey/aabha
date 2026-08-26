@@ -69,6 +69,15 @@ class VoiceRepository {
 
       await _room.setMicrophoneEnabled(true);
 
+      // Out of the speaker, not the earpiece — nobody holds a phone to their
+      // ear to talk to this. Only iOS and Android can route at all; the call
+      // reports and returns on anything else.
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.iOS)) {
+        await AudioManager.instance.setSpeakerOutputPreferred(true);
+      }
+
       // The room name is stable per user, so rejoining can land in a room
       // LiveKit already created — which fires no automatic dispatch. Asking
       // per connect is what makes leaving and coming back work.

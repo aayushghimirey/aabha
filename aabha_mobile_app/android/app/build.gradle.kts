@@ -6,7 +6,12 @@ plugins {
 
 android {
     namespace = "com.example.aabha_mobile_app"
-    compileSdk = flutter.compileSdkVersion
+    // Pinned above flutter.compileSdkVersion (36): flutter_secure_storage and
+    // permission_handler both refuse to link against anything lower. Only the
+    // APIs compiled against move — minSdk and targetSdk are untouched, so this
+    // changes neither which devices can install the app nor how it behaves on
+    // them.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
