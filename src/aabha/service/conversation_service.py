@@ -1,6 +1,12 @@
 from uuid import UUID
 
+from livekit.agents import AgentSession, ChatContext
+
+from aabha.agent.prompt import SUMMARY_INSTRUCTIONS
 from aabha.db.repo import conversation_repo
+from livekit.agents import llm
+
+_MAX_TRANSCRIPT_CHARS = 8000
 
 
 class UserConversation:
@@ -40,3 +46,40 @@ class UserConversation:
             summary=summary,
             message_count=message_count,
         )
+
+    async def summarise(self, session: AgentSession) -> None:
+        """Sum the call up and leave it on the conversation the entrypoint
+        opened.
+
+        Safe to call twice, and the job's shutdown callback should call it too:
+        a dropped connection does not always unwind through on_exit.
+        """
+        spoken = self._spoken()
+
+        if not spoken:
+            return
+
+        # That same shutdown callback can fire before the session ever started,
+        # and reaching for the model then is what raises.
+        try:
+            model = session.llm
+        except RuntimeError:
+            return
+
+        if not isinstance(model, llm.LLM):
+            return
+
+        chat_ctx = ChatContext.empty()
+        chat_ctx.add_message(role="system", content=SUMMARY_INSTRUCTIONS)
+        chat_ctx.add_message(
+            role="user", content="\n".join(spoken)[-_MAX_TRANSCRIPT_CHARS:]
+        )
+
+        response = await model.chat(chat_ctx=chat_ctx).collect()
+
+        # A model that answers with nothing would otherwise overwrite the NULL
+        # that marks a call as never summarised.
+        if not response.text:
+            return
+
+        await self._conversation.summarize_conversation(response.text, len(spoken))

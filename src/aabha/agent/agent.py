@@ -35,7 +35,7 @@ class AabhaAgent(Agent):
         self._conversation = conversation
 
     async def on_exit(self) -> None:
-        await self.summarise()
+        await self._conversation.summarise()
 
     @function_tool
     async def manage_memory(
@@ -71,42 +71,6 @@ class AabhaAgent(Agent):
             importance=importance,
         )
 
-    async def summarise(self) -> None:
-        """Sum the call up and leave it on the conversation the entrypoint
-        opened.
-
-        Safe to call twice, and the job's shutdown callback should call it too:
-        a dropped connection does not always unwind through on_exit.
-        """
-        spoken = self._spoken()
-
-        if not spoken:
-            return
-
-        # That same shutdown callback can fire before the session ever started,
-        # and reaching for the model then is what raises.
-        try:
-            model = self.session.llm
-        except RuntimeError:
-            return
-
-        if not isinstance(model, llm.LLM):
-            return
-
-        chat_ctx = ChatContext.empty()
-        chat_ctx.add_message(role="system", content=SUMMARY_INSTRUCTIONS)
-        chat_ctx.add_message(
-            role="user", content="\n".join(spoken)[-_MAX_TRANSCRIPT_CHARS:]
-        )
-
-        response = await model.chat(chat_ctx=chat_ctx).collect()
-
-        # A model that answers with nothing would otherwise overwrite the NULL
-        # that marks a call as never summarised.
-        if not response.text:
-            return
-
-        await self._conversation.summarize_conversation(response.text, len(spoken))
 
     def _spoken(self) -> list[str]:
         """What was actually said, as transcript lines. The memories handed in
