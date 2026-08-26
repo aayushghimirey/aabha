@@ -1,67 +1,76 @@
-from datetime import datetime
+from datetime import date
 from uuid import UUID
 
-from aabha.db.pool import get_cursor
-from aabha.models.user import User
-from aabha.services.security import hash_password
+from aabha.db.conn_pool import get_cursor
+from aabha.db.model.user import User
 
-_COLUMNS = "id, username, email, password, dob, created_at, updated_at"
+_COLUMNS = "id, username, email, password_hash, dob, created_at, updated_at"
 
 
-async def create_user(
-    *, username: str, email: str, password: str, dob: datetime
+async def insert_user(
+    *, username: str, email: str, password_hash: str, dob: date
 ) -> User:
-    """Store a new user, hashing the password on the way in.
+    """Stores a new user. The password arrives already hashed - hashing is the
+    service's job, and a repo that took plaintext could be handed it by mistake.
 
-    `password` is the plaintext the caller was given: hashing belongs here so
-    that storing one unhashed is not something a caller can forget to prevent.
-
-    Keyword-only, because three of the four arguments are strings and getting
-    a username into the email column is not the kind of mistake that announces
-    itself.
+    Keyword-only: three of the four arguments are strings, and a username in
+    the email column is not a mistake that announces itself.
     """
     async with get_cursor() as cursor:
         await cursor.execute(
-            f"INSERT INTO users (username, email, password, dob)"
-            f" VALUES (%s, %s, %s, %s) RETURNING {_COLUMNS}",
-            (username, email, hash_password(password), dob),
+            f"""
+            INSERT INTO users (username, email, password_hash, dob)
+            VALUES (%s, %s, %s, %s)
+            RETURNING {_COLUMNS}
+            """,
+            (username, email, password_hash, dob),
         )
+
         row = await cursor.fetchone()
+
         return User.model_validate(row)
 
 
-async def update_user(
-    user_id: UUID, *, username: str, email: str, dob: datetime
-) -> User | None:
-    """Overwrite a user's profile. The password is not touched here."""
+async def update_password_hash(user_id: UUID, password_hash: str) -> None:
     async with get_cursor() as cursor:
         await cursor.execute(
-            f"UPDATE users SET username = %s, email = %s, dob = %s, updated_at = now()"
-            f" WHERE id = %s RETURNING {_COLUMNS}",
-            (username, email, dob, user_id),
+            "UPDATE users SET password_hash = %s, updated_at = now() WHERE id = %s",
+            (password_hash, user_id),
         )
-        row = await cursor.fetchone()
-        return User.model_validate(row) if row else None
 
 
 async def find_user_by_id(user_id: UUID) -> User | None:
     async with get_cursor() as cursor:
-        await cursor.execute(f"SELECT {_COLUMNS} FROM users WHERE id = %s", (user_id,))
+        await cursor.execute(
+            f"SELECT {_COLUMNS} FROM users WHERE id = %s",
+            (user_id,),
+        )
+
         row = await cursor.fetchone()
+
         return User.model_validate(row) if row else None
 
 
 async def find_user_by_username(username: str) -> User | None:
+    """Case-folded, to match the unique index that let this name be taken."""
     async with get_cursor() as cursor:
         await cursor.execute(
-            f"SELECT {_COLUMNS} FROM users WHERE username = %s", (username,)
+            f"SELECT {_COLUMNS} FROM users WHERE lower(username) = lower(%s)",
+            (username,),
         )
+
         row = await cursor.fetchone()
+
         return User.model_validate(row) if row else None
 
 
 async def find_user_by_email(email: str) -> User | None:
     async with get_cursor() as cursor:
-        await cursor.execute(f"SELECT {_COLUMNS} FROM users WHERE email = %s", (email,))
+        await cursor.execute(
+            f"SELECT {_COLUMNS} FROM users WHERE lower(email) = lower(%s)",
+            (email,),
+        )
+
         row = await cursor.fetchone()
+
         return User.model_validate(row) if row else None

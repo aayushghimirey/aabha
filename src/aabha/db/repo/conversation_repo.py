@@ -1,51 +1,62 @@
 from uuid import UUID
 
-from aabha.db.pool import get_cursor
-from aabha.models.conversation import Conversation
+from aabha.db.conn_pool import get_cursor
+from aabha.db.model.conversation import Conversation
 
-_COLUMNS = "id, user_id, messages_count, summary, created_at, updated_at"
+_COLUMNS = "id, user_id, summary, message_count, created_at, updated_at, last_used_at"
 
 
 async def create_conversation(user_id: UUID) -> Conversation:
     async with get_cursor() as cursor:
         await cursor.execute(
-            f"INSERT INTO conversations (user_id) VALUES (%s) RETURNING {_COLUMNS}",
+            f"""
+            INSERT INTO conversation (user_id)
+            VALUES (%s)
+            RETURNING {_COLUMNS}
+            """,
             (user_id,),
         )
+
         row = await cursor.fetchone()
+
         return Conversation.model_validate(row)
 
 
-async def update_conversation_summary(
-    conversation_id: UUID, summary: str
+async def insert_conversation_summary(
+    conversation_id: UUID, summary: str, message_count: int
 ) -> Conversation | None:
+    """Writes the summary onto a conversation already opened. None when there
+    is no such row - fetchone needs the RETURNING clause to have something to
+    hand back."""
     async with get_cursor() as cursor:
         await cursor.execute(
-            f"UPDATE conversations SET summary = %s, updated_at = now()"
-            f" WHERE id = %s RETURNING {_COLUMNS}",
-            (summary, conversation_id),
+            f"""
+            UPDATE conversation
+            SET summary = %s, message_count = %s, updated_at = now()
+            WHERE id = %s
+            RETURNING {_COLUMNS}
+            """,
+            (summary, message_count, conversation_id),
         )
+
         row = await cursor.fetchone()
+
         return Conversation.model_validate(row) if row else None
 
 
-async def get_latest_conversation(user_id: UUID) -> Conversation | None:
+async def get_conversations(user_id: UUID, limit: int = 5) -> list[Conversation]:
+    """The user's most recent conversations, newest first."""
     async with get_cursor() as cursor:
         await cursor.execute(
-            f"SELECT {_COLUMNS} FROM conversations WHERE user_id = %s"
-            f" ORDER BY updated_at DESC LIMIT 1",
-            (user_id,),
-        )
-        row = await cursor.fetchone()
-        return Conversation.model_validate(row) if row else None
-
-
-async def get_conversations(user_id: UUID, limit: int = 10) -> list[Conversation]:
-    async with get_cursor() as cursor:
-        await cursor.execute(
-            f"SELECT {_COLUMNS} FROM conversations WHERE user_id = %s"
-            f" ORDER BY updated_at DESC LIMIT %s",
+            f"""
+            SELECT {_COLUMNS} FROM conversation
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
             (user_id, limit),
         )
+
         rows = await cursor.fetchall()
+
         return [Conversation.model_validate(row) for row in rows]
