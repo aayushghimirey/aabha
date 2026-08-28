@@ -39,5 +39,9 @@ class Config:
         default_factory=lambda: os.getenv("AABHA_TTS_MODEL", "cartesia/sonic-2")
     )
 
+    GOOGLE_MAP_API_KEY: str = field(
+        default_factory=lambda: os.getenv("GOOGLE_MAP_API_KEY", "")
+    )
+
 
 config = Config()

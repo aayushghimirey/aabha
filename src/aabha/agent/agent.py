@@ -13,8 +13,10 @@ from livekit.agents import (
 from aabha.agent.prompt import AGENT_PROMPT
 from aabha.db.models import MemoryKind
 from aabha.service.conversation_service import UserConversation
+from aabha.service.google_service import PlaceResult, find_nearby_places
 from aabha.service.location_service import LocationUnavailable, UserLocation
 from aabha.service.memory_service import MemoryAction, UserMemory
+from aabha.utils.goole_search_place_type import GooglePlaceType
 
 logger = logging.getLogger("aabha.agent")
 
@@ -110,6 +112,39 @@ class AabhaAgent(Agent):
             raise ToolError(str(e))
 
         return coordinates.model_dump()
+
+    @function_tool
+    async def search_nearby_places(
+        self,
+        query: GooglePlaceType,
+        radius: float = 500.0,
+    ) -> list[dict]:
+        """
+        Find places of the specified type near the user's current location.
+
+        Start with a 500-meter search radius. If suitable places are not found,
+        increase the radius and search again.
+        
+        Among response place, suggest only best 3 places and ask the user to choose.
+        """
+
+        result = await find_nearby_places(
+            query,
+            await self._location.current_coordinates(),
+            radius,
+        )
+
+        return [
+            {
+                "id": place.id,
+                "name": place.displayName["text"],
+                "address": place.formattedAddress,
+                "latitude": place.location.latitude,
+                "longitude": place.location.longitude,
+                "type": place.primaryType,
+            }
+            for place in result.places
+        ]
 
     def _spoken(self) -> list[str]:
         """What was actually said, as transcript lines. The memories handed in
