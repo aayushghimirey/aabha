@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from aabha.api.routes import auth, livekit
+from aabha.api.routes import auth, users
 from aabha.db.conn_pool import close_connection_pool, get_cursor, open_connection_pool
 
 _SCHEMA = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
@@ -37,8 +37,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.include_router(users.router)
     app.include_router(auth.router)
-    app.include_router(livekit.router)
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict[str, str]:

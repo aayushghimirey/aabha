@@ -2,7 +2,7 @@ from datetime import date
 
 from psycopg.errors import UniqueViolation
 
-from aabha.db.model.user import User
+from aabha.db.models import User
 from aabha.db.repo import user_repo
 from aabha.service import security
 

@@ -3,7 +3,7 @@ from uuid import UUID
 from livekit.agents import AgentSession, ChatContext, llm
 
 from aabha.agent.prompt import SUMMARY_INSTRUCTIONS
-from aabha.db.model.conversation import Conversation
+from aabha.db.models import Conversation
 from aabha.db.repo import conversation_repo
 
 _MAX_TRANSCRIPT_CHARS = 8000

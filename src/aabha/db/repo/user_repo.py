@@ -2,7 +2,7 @@ from datetime import date
 from uuid import UUID
 
 from aabha.db.conn_pool import get_cursor
-from aabha.db.model.user import User
+from aabha.db.models import User
 
 _COLUMNS = "id, username, email, password_hash, dob, created_at, updated_at"
 
@@ -57,18 +57,6 @@ async def find_user_by_username(username: str) -> User | None:
         await cursor.execute(
             f"SELECT {_COLUMNS} FROM users WHERE lower(username) = lower(%s)",
             (username,),
-        )
-
-        row = await cursor.fetchone()
-
-        return User.model_validate(row) if row else None
-
-
-async def find_user_by_email(email: str) -> User | None:
-    async with get_cursor() as cursor:
-        await cursor.execute(
-            f"SELECT {_COLUMNS} FROM users WHERE lower(email) = lower(%s)",
-            (email,),
         )
 
         row = await cursor.fetchone()

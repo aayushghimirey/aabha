@@ -11,7 +11,7 @@ from livekit.agents import (
 )
 
 from aabha.agent.prompt import AGENT_PROMPT
-from aabha.db.model.memory import MemoryKind
+from aabha.db.models import MemoryKind
 from aabha.service.conversation_service import UserConversation
 from aabha.service.location_service import LocationUnavailable, UserLocation
 from aabha.service.memory_service import MemoryAction, UserMemory
@@ -110,31 +110,6 @@ class AabhaAgent(Agent):
             raise ToolError(str(e))
 
         return coordinates.model_dump()
-
-    @function_tool
-    async def ask_current_address(self) -> dict:
-        """Ask where the user is, in words.
-
-        Use this when what they asked for depends on the place they are in -
-        the weather, what is nearby, what time it is for them - and they have
-        not said where that is.
-
-        The answer is the place in full: a one-line `formatted` address, the
-        parts it is made of (street, city, state, country), the name of what
-        they are standing at when it is something nameable, and its time zone.
-        Take from it whatever the question needs. Whatever is not known is
-        left out.
-        """
-        try:
-            location = await self._location.current_address()
-        except LocationUnavailable as e:
-            # Why it failed is the user's answer as much as a location would
-            # be - a refused permission is not a device that never replied.
-            raise ToolError(str(e))
-
-        # Unknowns are dropped rather than sent as nulls: a field that is not
-        # there reads as "not known", which is what it means.
-        return location.model_dump(exclude_none=True)
 
     def _spoken(self) -> list[str]:
         """What was actually said, as transcript lines. The memories handed in

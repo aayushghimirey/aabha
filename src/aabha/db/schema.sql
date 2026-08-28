@@ -29,7 +29,6 @@ CREATE TABLE IF NOT EXISTS memory (
     importance    SMALLINT    NOT NULL DEFAULT 5 CHECK (importance BETWEEN 1 AND 10),
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_used_at  TIMESTAMPTZ,
 
     -- The handle the assistant names a memory by. Saving under a key that is
     -- already taken overwrites it, which is what keeps one fact from being
@@ -53,8 +52,7 @@ CREATE TABLE IF NOT EXISTS conversation (
 
     message_count  INTEGER     NOT NULL DEFAULT 0 CHECK (message_count >= 0),
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_used_at   TIMESTAMPTZ
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS conversation_user_recent_idx

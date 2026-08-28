@@ -1,11 +1,10 @@
 from uuid import UUID
 
 from aabha.db.conn_pool import get_cursor
-from aabha.db.model.memory import Memory, MemoryDraft
+from aabha.db.models import Memory, MemoryDraft
 
 _COLUMNS = (
-    "id, user_id, key, kind, content, source, importance,"
-    " created_at, updated_at, last_used_at"
+    "id, user_id, key, kind, content, source, importance, created_at, updated_at"
 )
 
 
@@ -69,17 +68,3 @@ async def get_memories(user_id: UUID, limit: int = 50) -> list[Memory]:
         rows = await cursor.fetchall()
 
         return [Memory.model_validate(row) for row in rows]
-
-
-async def touch_memories(user_id: UUID, memory_ids: list[UUID]) -> None:
-    """Marks memories as having been recalled. What has not been used in a long
-    time is what to drop first once a user has more than fits in a prompt."""
-    if not memory_ids:
-        return
-
-    async with get_cursor() as cursor:
-        await cursor.execute(
-            "UPDATE memory SET last_used_at = now()"
-            " WHERE user_id = %s AND id = ANY(%s)",
-            (user_id, memory_ids),
-        )

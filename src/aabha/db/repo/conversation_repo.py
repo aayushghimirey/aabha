@@ -1,9 +1,9 @@
 from uuid import UUID
 
 from aabha.db.conn_pool import get_cursor
-from aabha.db.model.conversation import Conversation
+from aabha.db.models import Conversation
 
-_COLUMNS = "id, user_id, summary, message_count, created_at, updated_at, last_used_at"
+_COLUMNS = "id, user_id, summary, message_count, created_at, updated_at"
 
 
 async def create_conversation(user_id: UUID) -> Conversation:

@@ -1,9 +1,0 @@
-fastapi
-uvicorn[standard]
-pydantic[email]
-dotenv
-psycopg[binary]
-psycopg-pool
-argon2-cffi
-livekit-agents
-livekit-agents[mcp]
