@@ -1,7 +1,7 @@
 from typing import Literal
 from uuid import UUID
 
-from aabha.db.model.memory import Memory, MemoryDraft, MemoryKind
+from aabha.db.models import Memory, MemoryDraft, MemoryKind
 from aabha.db.repo import memory_repo
 
 MemoryAction = Literal["save", "delete"]

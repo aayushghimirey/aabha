@@ -29,7 +29,6 @@ CREATE TABLE IF NOT EXISTS memory (
     importance    SMALLINT    NOT NULL DEFAULT 5 CHECK (importance BETWEEN 1 AND 10),
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_used_at  TIMESTAMPTZ,
 
     -- The handle the assistant names a memory by. Saving under a key that is
     -- already taken overwrites it, which is what keeps one fact from being
@@ -53,40 +52,8 @@ CREATE TABLE IF NOT EXISTS conversation (
 
     message_count  INTEGER     NOT NULL DEFAULT 0 CHECK (message_count >= 0),
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_used_at   TIMESTAMPTZ
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS conversation_user_recent_idx
     ON conversation (user_id, created_at DESC);
-
-
--- One navigation the user asked for. Written down when it starts, and updated
--- as it runs, so a route can be told apart from one that was finished, dropped
--- or never got going.
-
-CREATE TABLE IF NOT EXISTS navigation_route (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id             UUID        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-
-    mode                TEXT        NOT NULL
-                        CHECK (mode IN ('driving-car', 'cycling-regular', 'foot-walking')),
-
-    -- [lat, lon]. Kept together because they are only ever read as a pair.
-    initial_coords      DOUBLE PRECISION[] NOT NULL
-                        CHECK (array_length(initial_coords, 1) = 2),
-    destination_coords  DOUBLE PRECISION[] NOT NULL
-                        CHECK (array_length(destination_coords, 1) = 2),
-
-    destination         TEXT        NOT NULL,
-
-    status              TEXT        NOT NULL DEFAULT 'pending'
-                        CHECK (status IN ('pending', 'active', 'completed', 'cancelled')),
-
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_used_at        TIMESTAMPTZ
-);
-
-CREATE INDEX IF NOT EXISTS navigation_route_user_recent_idx
-    ON navigation_route (user_id, created_at DESC);

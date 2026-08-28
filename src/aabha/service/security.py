@@ -13,7 +13,7 @@ def verify_password(password_hash: str, password: str) -> bool:
     mismatch and a corrupt hash both mean the same thing - do not sign them in."""
     try:
         return _hasher.verify(password_hash, password)
-    except VerifyMismatchError, VerificationError, InvalidHashError:
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
         return False
 
 

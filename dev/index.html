@@ -605,7 +605,7 @@
         <div class="col">
           <div class="card">
             <h2>Account</h2>
-            <p class="sub">What <code>POST /auth/signin</code> handed back. The API has no
+            <p class="sub">What <code>POST /auth/login</code> handed back. The API has no
               profile routes yet, so this is read-only.</p>
             <dl class="info">
               <dt>Username</dt>
@@ -623,8 +623,8 @@
 
           <div class="card">
             <h2>LiveKit session</h2>
-            <p class="sub">From <code>POST /livekit/token</code>. Every connect also calls
-              <code>/livekit/dispatch</code> so a reused room still gets an agent.
+            <p class="sub">From <code>POST /auth/token</code>. Every connect also calls
+              <code>/auth/dispatch</code> so a reused room still gets an agent.
             </p>
             <dl class="info">
               <dt>Room</dt>
@@ -826,8 +826,8 @@
      *  confirms who you are, the second buys the LiveKit grant. Doing both here
      *  means the password never has to be held anywhere. */
     async function signIn(username, password) {
-      user = await api("/auth/signin", { method: "POST", body: { username, password } });
-      token = await api("/livekit/token", { method: "POST", body: { username, password } });
+      user = await api("/auth/login", { method: "POST", body: { username, password } });
+      token = await api("/auth/token", { method: "POST", body: { username, password } });
       store.session = { user, token };
       showApp();
     }
@@ -852,7 +852,7 @@
       const username = $("su-username").value.trim();
       const password = $("su-password").value;
       try {
-        await api("/auth/signup", {
+        await api("/users/register", {
           method: "POST",
           body: { username, email: $("su-email").value.trim(), password, dob: $("su-dob").value },
         });
@@ -946,7 +946,7 @@
       try {
         await room.connect(token.server_url, token.token);
         room.registerTextStreamHandler(TRANSCRIPTION_TOPIC, onTranscription);
-        registerCoordinatesRpc(room);
+        registerLocationRpc(room);
 
         await room.localParticipant.setMicrophoneEnabled(true);
 
@@ -954,7 +954,7 @@
         // LiveKit already created - which fires no automatic dispatch. Asking
         // per connect is what makes leaving and coming back work. The LiveKit
         // token is the credential, so the password stays out of this path.
-        await api("/livekit/dispatch", {
+        await api("/auth/dispatch", {
           method: "POST",
           headers: { Authorization: `Bearer ${token.token}` },
         });
@@ -1008,9 +1008,9 @@
     // The agent calls this over RPC when it needs to know where the user is.
     // It has to be registered on every connect: the handler lives on the room
     // object, and connect() builds a new one each time.
-    const COORDINATES_RPC_METHOD = "get_current_coordinates";
+    const LOCATION_RPC_METHOD = "get_current_location";
 
-    // Under the 20s the agent waits, so a browser that never answers still
+    // Under the 30s the agent waits, so a browser that never answers still
     // fails here - with something to say - rather than as a timeout there.
     const GEO_TIMEOUT_MS = 15000;
 
@@ -1043,13 +1043,13 @@
       });
     }
 
-    function registerCoordinatesRpc(room) {
+    function registerLocationRpc(room) {
       // Registering twice throws, and connect() is called again on every
       // rejoin - harmless today because each connect builds a fresh Room, but
       // it costs nothing to not depend on that.
-      room.localParticipant.unregisterRpcMethod(COORDINATES_RPC_METHOD);
+      room.localParticipant.unregisterRpcMethod(LOCATION_RPC_METHOD);
 
-      room.localParticipant.registerRpcMethod(COORDINATES_RPC_METHOD, async () => {
+      room.localParticipant.registerRpcMethod(LOCATION_RPC_METHOD, async () => {
         setLocation("asked…");
 
         let position;

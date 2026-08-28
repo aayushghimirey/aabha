@@ -1,7 +1,7 @@
 from fastapi import Header, HTTPException, status
 
-from aabha.api.dto.auth import SignInRequest
-from aabha.db.model.user import User
+from aabha.api.schemas import AuthRequest
+from aabha.db.models import User
 from aabha.service import livekit_service, user_service
 
 INVALID_CREDENTIALS = HTTPException(
@@ -10,7 +10,7 @@ INVALID_CREDENTIALS = HTTPException(
 )
 
 
-async def authenticate(payload: SignInRequest) -> User:
+async def authenticate(payload: AuthRequest) -> User:
     """The user behind a username and password, or 401."""
     user = await user_service.sign_in(payload.username, payload.password)
 

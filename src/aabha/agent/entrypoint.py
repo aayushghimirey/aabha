@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import logging
-import os
 from uuid import UUID
 
-from dotenv import load_dotenv
 from livekit.agents import (
     AgentServer,
     AgentSession,
@@ -13,7 +11,6 @@ from livekit.agents import (
     TurnHandlingOptions,
     cli,
     inference,
-    mcp,
 )
 
 from aabha.agent.agent import AabhaAgent
@@ -25,14 +22,7 @@ from aabha.service.livekit_service import AGENT_NAME
 from aabha.service.location_service import UserLocation
 from aabha.service.memory_service import UserMemory
 
-load_dotenv()
-
 logger = logging.getLogger("aabha.agent")
-
-# LiveKit Inference model ids, so no per-provider plugin packages are needed.
-LLM_MODEL = os.getenv("AABHA_LLM_MODEL", "openai/gpt-4.1-mini")
-STT_MODEL = os.getenv("AABHA_STT_MODEL", "deepgram/nova-3")
-TTS_MODEL = os.getenv("AABHA_TTS_MODEL", "cartesia/sonic-2")
 
 server = AgentServer()
 
@@ -123,9 +113,9 @@ async def entrypoint(ctx: JobContext) -> None:
     )
 
     session = AgentSession(
-        llm=LLM_MODEL,
-        stt=STT_MODEL,
-        tts=TTS_MODEL,
+        llm=config.LLM_MODEL,
+        stt=config.STT_MODEL,
+        tts=config.TTS_MODEL,
         turn_handling=TurnHandlingOptions(
             turn_detection=inference.TurnDetector(),
         ),
@@ -133,11 +123,6 @@ async def entrypoint(ctx: JobContext) -> None:
         min_endpointing_delay=0.5,
         max_endpointing_delay=3.0,
         vad=inference.VAD(model="silero", activation_threshold=0.6),
-        tools=[
-            mcp.MCPToolset(
-                id="tavily", mcp_server=mcp.MCPServerHTTP(url=config.TAVILY_MCP_URL)
-            )
-        ],
     )
 
     logger.info(

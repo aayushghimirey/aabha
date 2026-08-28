@@ -1,6 +1,26 @@
 # aabha
 An intelligent voice companion that understands context, remembers what matters, and helps you navigate everyday life.
 
+## What it does
+
+An account, a voice call, and an assistant that remembers you between calls.
+
+    POST /users/register   username, email, password, dob -> the user
+    POST /auth/login       username, password             -> the user
+    POST /auth/token       username, password             -> a LiveKit grant
+    POST /auth/dispatch    Bearer <livekit token>         -> 204, agent job started
+
+The API issues no session of its own. The LiveKit token is the only credential
+a client holds, which is why login and token are two calls against the same
+credentials rather than one.
+
+On a call the agent has two tools. `manage_memory` saves and forgets facts
+about the user, keyed so one fact is stored one way; the call is summarised on
+the way out and the last two summaries are read back at the start of the next
+one. `ask_current_coordinates` asks the user's device over LiveKit RPC
+(`get_current_location`) for a latitude and longitude - nothing is stored, and
+the agent is told not to read the numbers out.
+
 ## Running the stack
 
     cp .env.example .env      # first time only, then fill in the keys
